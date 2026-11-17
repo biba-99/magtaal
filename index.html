@@ -445,7 +445,7 @@ let fdb=null, auth=null, me=null, isEditor=false, isOwner=false, mode="loading",
 function canEditSongs(){return canEditMembers()}
 function fabVisible(){return canWrite&&(tab==="sets"||(tab==="songs"?canEditSongs():canEditMembers()))}
 function canEditMembers(){return mode!=="db"||isOwner}
-let unsubMembers=null, unsubEditors=null, unsubSets=null;
+let unsubMembers=null, unsubEditors=null;
 const LS_KEY="worship-leader-local-v1";
 
 function lsLoad(){try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}")}catch(e){return {}}}
@@ -510,7 +510,7 @@ function init(){
   fdb=firebase.firestore(); auth=firebase.auth();
   mode="db"; setStatus("");
   const timer=setTimeout(()=>{if(!state.songs.size){const off=document.getElementById("offline");off.textContent="Сантай холбогдох хүлээгдэж байна. Интернэтээ шалгана уу.";off.style.display="block"}},10000);
-  subscribe("songs");
+  subscribe("songs"); subscribe("sets");
   fdb.collection("songs").limit(1).get().then(()=>clearTimeout(timer)).catch(()=>{});
   document.getElementById("authBtn").style.display="";
   auth.getRedirectResult().catch(e=>toast("Нэвтэрч чадсангүй: "+(e.message||e.code)));
@@ -520,9 +520,8 @@ function init(){
     isEditor=isOwner;
     if(u&&!isOwner){ try{const d=await fdb.collection("editors").doc(u.email.toLowerCase()).get(); isEditor=d.exists}catch(e){isEditor=false} }
     canWrite=isEditor;
-    if(unsubMembers){unsubMembers();unsubMembers=null} if(unsubEditors){unsubEditors();unsubEditors=null} if(unsubSets){unsubSets();unsubSets=null}
-    state.members=new Map(); state.editors=new Map(); state.sets=new Map();
-    if(u) unsubSets=subscribe("sets",()=>{});
+    if(unsubMembers){unsubMembers();unsubMembers=null} if(unsubEditors){unsubEditors();unsubEditors=null}
+    state.members=new Map(); state.editors=new Map();
     if(isEditor) unsubMembers=subscribe("members",()=>{});
     if(isOwner) unsubEditors=subscribe("editors",()=>{});
     renderAuth(); renderAll();
@@ -606,14 +605,12 @@ function renderSongs(){
 function fmtDate(d){if(!d)return"";const [y,m,dd]=d.split("-");return `${y}.${m}.${dd}`}
 function renderSets(){
   const el=document.getElementById("setlist");
-  if(mode==="db"&&!me){el.innerHTML='<div class="empty">Жагсаалтыг харахын тулд нэвтэрнэ үү.<br><br><button class="btn primary" id="setsLogin">Нэвтрэх</button></div>';document.getElementById("setsLogin").onclick=signIn;return}
   const sets=[...state.sets.entries()].sort((a,b)=>(b[1].date||"").localeCompare(a[1].date||""));
   if(!sets.length){el.innerHTML='<div class="empty">Үйлчлэлийн жагсаалт алга.<br><b>+</b> дарж ням гарагийн дуугаа жагсаагаарай.</div>';return}
   const today=new Date().toISOString().slice(0,10);
   el.innerHTML=sets.map(([id,s])=>`<button class="item" data-set="${id}">
-    <span class="keybadge" style="${(s.date||"")>=today?"":"opacity:.55"}">${(s.items||[]).length}</span>
-    <span class="grow"><div class="t">${esc(s.name||"Үйлчлэл")}</div>
-    <div class="s">${fmtDate(s.date)} · ${(s.items||[]).map(it=>esc(state.songs.get(it.songId)?.title||"?")).join(", ")||"дуу алга"}</div></span></button>`).join("");
+    <span class="grow" style="${(s.date||"")>=today?"":"opacity:.6"}"><div class="t">${esc(s.name||"Үйлчлэл")}</div>
+    ${s.date?`<div class="s">${fmtDate(s.date)}</div>`:""}</span></button>`).join("");
 }
 
 function openGroupEdit(g){

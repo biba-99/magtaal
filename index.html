@@ -426,16 +426,16 @@ function renderSong(text,steps,flat){
 
 /* ================== ТОХИРГОО — зөвхөн энэ хэсгийг өөрчилнө ==================
    Firebase console → Project settings → Your apps → Web app → firebaseConfig
-   доторх утгуудыг хуулж энд буулгана. OWNER_EMAIL-д өөрийн Gmail-ээ бичнэ. */
+   доторх утгууд. */
 const FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyAvy4I3ME6SLh13bx0qD4cnzoR1QHC5ONU",
+  authDomain: "magtaal-app.firebaseapp.com",
+  projectId: "magtaal-app",
+  storageBucket: "magtaal-app.firebasestorage.app",
+  messagingSenderId: "1099288491305",
+  appId: "1:1099288491305:web:5cb2c20a690c2a7973b338"
 };
-const OWNER_EMAIL = "";   // жишээ: "tanii.ner@gmail.com"
+// Эзэмшигчийг Firestore дүрэм (firestore.rules) тодорхойлно — и-мэйл энд бичигдэхгүй.
 /* =========================================================================== */
 
 /* ---------------- Store (Firebase, or local fallback) ---------------- */
@@ -515,7 +515,8 @@ function init(){
   document.getElementById("authBtn").style.display="";
   auth.getRedirectResult().catch(e=>toast("Нэвтэрч чадсангүй: "+(e.message||e.code)));
   auth.onAuthStateChanged(async u=>{
-    me=u; isOwner=!!(u&&OWNER_EMAIL&&u.email&&u.email.toLowerCase()===OWNER_EMAIL.toLowerCase());
+    me=u; isOwner=false;
+    if(u){ try{ await fdb.doc("meta/ownercheck").get(); isOwner=true; }catch(e){ isOwner=false; } }
     isEditor=isOwner;
     if(u&&!isOwner){ try{const d=await fdb.collection("editors").doc(u.email.toLowerCase()).get(); isEditor=d.exists}catch(e){isEditor=false} }
     canWrite=isEditor;
@@ -1552,12 +1553,27 @@ function openSettings(needKey){
   openModal(`<h2>Тохиргоо</h2>
     ${mode==="db"?(me?`<div class="sl-song"><span class="avatar">${esc((me.displayName||me.email).slice(0,1))}</span><div style="flex:1;min-width:0"><div style="font-weight:600">${esc(me.displayName||"")}</div><div style="font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis">${esc(me.email)} · ${isOwner?"Эзэмшигч":isEditor?"Засах эрхтэй":"Зөвхөн үзэх"}</div></div><button class="btn small" id="st-out">Гарах</button></div>`
       :`<button class="btn primary" id="st-in" style="width:100%">Google-ээр нэвтрэх</button><div class="help">Үзэхэд нэвтрэх шаардлагагүй. Засварлахын тулд нэвтэрнэ.</div>`):""}
+    ${isOwner?`<h3 class="sub">Өгөгдөл оруулах</h3><div class="help" style="margin:0 0 8px">Claude дээрх аппын «⬇ Бүх өгөгдлийг хуулах» товчоор хуулсан текстээ энд буулгана.</div>
+      <textarea class="in" id="st-imp" style="min-height:90px;font-size:12px" placeholder='{"songs":{…},"sets":{…},"members":{…}}'></textarea>
+      <button class="btn" id="st-impbtn" style="width:100%;margin-top:6px">⬆ Оруулах</button><div id="st-impmsg" class="help" style="display:none"></div>`:""}
     <h3 class="sub">Зурагнаас таних (заавал биш)</h3>
     <div class="help" style="margin:0 0 8px">${needKey?"<b>Зураг таних функцэд Claude API түлхүүр хэрэгтэй.</b><br>":""}console.anthropic.com дээрээс авсан түлхүүрээ оруулна. Энэ төхөөрөмж дээр л хадгалагдана, хэнд ч харагдахгүй. Нэг дуу таниулахад ойролцоогоор хэдэн цент зарцуулна.</div>
     <input class="in" id="st-key" type="password" placeholder="sk-ant-..." value="${esc(k)}" autocomplete="off">
     <div class="row" style="margin-top:12px"><button class="btn" data-mclose style="flex:1">Хаах</button><button class="btn primary" id="st-save" style="flex:1">Хадгалах</button></div>`);
   const bi=document.getElementById("st-in"); if(bi) bi.onclick=()=>{closeModal();signIn()};
   const bo=document.getElementById("st-out"); if(bo) bo.onclick=()=>{closeModal();auth.signOut()};
+  const ib=document.getElementById("st-impbtn"); if(ib) ib.onclick=async()=>{
+    const msg=document.getElementById("st-impmsg"); msg.style.display="";
+    let o; try{o=JSON.parse(document.getElementById("st-imp").value)}catch(e){msg.textContent="❌ JSON буруу байна";return}
+    const ops=[]; for(const c of ["songs","sets","members"]) for(const [id,d] of Object.entries(o[c]||{})) ops.push([c,id,d]);
+    if(!ops.length){msg.textContent="❌ Өгөгдөл олдсонгүй";return}
+    ib.disabled=true; let done=0;
+    try{
+      for(let i=0;i<ops.length;i+=400){const b=fdb.batch(); for(const [c,id,d] of ops.slice(i,i+400)) b.set(fdb.collection(c).doc(id),d); await b.commit(); done+=Math.min(400,ops.length-i); msg.textContent=`⏳ ${done}/${ops.length}…`;}
+      msg.textContent=`✅ ${ops.length} зүйл орууллаа (дуу ${Object.keys(o.songs||{}).length}, жагсаалт ${Object.keys(o.sets||{}).length}, гишүүн ${Object.keys(o.members||{}).length})`;
+    }catch(e){msg.textContent="❌ Алдаа: "+(e.code||e.message)}
+    ib.disabled=false;
+  };
   document.getElementById("st-save").onclick=()=>{setApiKey(document.getElementById("st-key").value.trim());closeModal();toast("Хадгаллаа")};
 }
 document.getElementById("setBtn").onclick=()=>openSettings(false);

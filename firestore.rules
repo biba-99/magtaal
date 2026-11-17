@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ↓↓↓ Энд өөрийн Gmail хаягаа жижиг үсгээр бичнэ ↓↓↓
+    function ownerEmail() { return "tanii.ner@gmail.com"; }
+
+    function signedIn() { return request.auth != null && request.auth.token.email != null; }
+    function isOwner()  { return signedIn() && request.auth.token.email.lower() == ownerEmail(); }
+    function isEditor() {
+      return isOwner() || (signedIn() &&
+        exists(/databases/$(database)/documents/editors/$(request.auth.token.email.lower())));
+    }
+
+    // Дууны сан: хэн ч үзнэ, зөвхөн эзэмшигч нэмж/засна
+    match /songs/{id}   { allow read: if true; allow write: if isOwner(); }
+    // Жагсаалт: хэн ч үзнэ, засах эрхтэй хүмүүс засна
+    match /sets/{id}    { allow read: if true; allow write: if isEditor(); }
+
+    // Багийн гишүүд (утасны дугаар): засах эрхтэй хүмүүс үзнэ, зөвхөн эзэмшигч нэмж/засна
+    match /members/{id} { allow read: if isEditor(); allow write: if isOwner(); }
+
+    // Засах эрхтэй хүмүүсийн жагсаалт: зөвхөн эзэмшигч өөрчилнө
+    match /editors/{email} {
+      allow get: if signedIn() && (request.auth.token.email.lower() == email || isOwner());
+      allow list, write: if isOwner();
+    }
+  }
+}

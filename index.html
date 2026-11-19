@@ -836,7 +836,8 @@ function doAutosave(){
   if(prev&&prev.audio) data.audio=prev.audio;
   if(prev&&["title","author","key","bpm","body","link"].every(k=>(prev[k]||"")===(data[k]||""))&&(prev.tags||[]).join()==data.tags.join()) {setEdStatus(editSaved?"Хадгалагдсан ✓":"");return saveChain}
   setEdStatus("Хадгалж байна…");
-  saveChain=saveChain.then(()=>save("songs",id,data)).then(()=>{
+  const prevSnap=prev?{title:prev.title||"",author:prev.author||"",body:prev.body||""}:null;
+  saveChain=saveChain.then(()=>save("songs",id,data)).then(()=>{ if(prevSnap) return propagateSongEdit(id,prevSnap,data) }).then(()=>{
     editSaved=true; document.getElementById("ed-del").style.display="";
     if(document.getElementById("editSheet").classList.contains("on")&&editId===id) setEdStatus(canWrite?"Хадгалагдсан ✓":"");
   });
@@ -898,6 +899,61 @@ function transferChords(oldLine,newPlain){
   if(newPlain===t) return serLine({text:newPlain,ch});
   if(!t.trim()&&newPlain.trim()==="♪") return oldLine.replace(/\s+$/,"");
   return serLine({text:newPlain,ch:ch.map(o=>({pos:Math.max(0,o.pos>=t.length&&newPlain.length?newPlain.length+(o.pos-t.length):remapPos(Math.min(o.pos,t.length),t,newPlain)),c:o.c}))});
+}
+/* Дууны санд орсон үгийн өөрчлөлтийг жагсаалт доторх (засварласан) хувилбаруудад дамжуулна */
+function lyricEditMap(oldBody,newBody){
+  const O=String(oldBody).replace(/\r/g,"").split("\n").map(plainLine), N=String(newBody).replace(/\r/g,"").split("\n").map(plainLine);
+  const n=O.length,m=N.length, dp=Array.from({length:n+1},()=>new Int32Array(m+1));
+  for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--) dp[i][j]=O[i]===N[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+  const rep=new Map(), del=new Set(), ins=new Map(); // ins: anchor old plain ("" = эхэнд) -> [new lines]
+  let i=0,j=0,go=[],gn=[],anchor="";
+  const key=t=>t.trim();
+  const flush=()=>{
+    const k=Math.min(go.length,gn.length);
+    for(let x=0;x<k;x++){ if(key(go[x])&&!rep.has(key(go[x]))) rep.set(key(go[x]),gn[x]); else if(!key(go[x])&&key(gn[x])) (ins.get(anchor)||ins.set(anchor,[]).get(anchor)).push(gn[x]); }
+    for(let x=k;x<go.length;x++) if(key(go[x])) del.add(key(go[x]));
+    if(gn.length>k){ const a=go.length?key(go[go.length-1]):anchor; const arr=ins.get(a)||[]; arr.push(...gn.slice(k)); ins.set(a,arr) }
+    go=[];gn=[];
+  };
+  while(i<n||j<m){
+    if(i<n&&j<m&&O[i]===N[j]){flush(); if(key(O[i])) anchor=key(O[i]); i++;j++;}
+    else if(j<m&&(i>=n||dp[i][j+1]>=dp[i+1][j])) gn.push(N[j++]);
+    else go.push(O[i++]);
+  }
+  flush();
+  return {rep,del,ins};
+}
+function applyLyricEdits(body,map){
+  const out=[]; const used=new Set();
+  const L=String(body).replace(/\r/g,"").split("\n");
+  if(map.ins.has("")){out.push(...map.ins.get(""));used.add("")}
+  for(const line of L){
+    const k=plainLine(line).trim();
+    if(k&&map.del.has(k)) continue;
+    if(k&&map.rep.has(k)) out.push(transferChords(line,map.rep.get(k))); else out.push(line);
+    if(k&&map.ins.has(k)&&!used.has(k)){out.push(...map.ins.get(k));used.add(k)}
+  }
+  return out.join("\n");
+}
+async function propagateSongEdit(songId,prev,next){
+  if(!canWrite) return;
+  const lyricsChanged=plainOf(prev.body)!==plainOf(next.body||"");
+  const titleCh=(prev.title||"")!==(next.title||""), authCh=(prev.author||"")!==(next.author||"");
+  if(!lyricsChanged&&!titleCh&&!authCh) return;
+  const map=lyricsChanged?lyricEditMap(prev.body,next.body||""):null;
+  let n=0;
+  for(const [sid,set] of [...state.sets.entries()]){
+    if(!(set.items||[]).some(it=>it.songId===songId&&it.ov)) continue;
+    const s=structuredClone(set); let ch=false;
+    for(const it of s.items){
+      if(it.songId!==songId||!it.ov) continue;
+      if(map&&it.ov.body){const nb=applyLyricEdits(it.ov.body,map); if(nb!==it.ov.body){it.ov.body=nb;ch=true}}
+      if(titleCh&&(it.ov.title||"")===(prev.title||"")){it.ov.title=next.title;ch=true}
+      if(authCh&&(it.ov.author||"")===(prev.author||"")){it.ov.author=next.author;ch=true}
+    }
+    if(ch){n++; await save("sets",sid,s)}
+  }
+  if(n) toast(tr("Жагсаалтын хувилбарууд шинэчлэгдлээ")+" ("+n+")");
 }
 function lineSim(a,b){
   a=a.trim().toLowerCase();b=b.trim().toLowerCase();
@@ -1860,7 +1916,7 @@ document.getElementById("teamlist").addEventListener("click",async e=>{
 const I18N={
 "Магтаалын":"Worship","баг":"Team","Магтаалын баг":"Worship Team",
 "Дуунууд":"Songs","Жагсаалт":"Setlists","Баг":"Team",
-"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
+"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
 "Холбогдож байна…":"Connecting…","Удаан байна…":"Taking a while…","Багтай хуваалцсан ✓":"Shared with team ✓","Хандах эрх алга":"No access",
 "Хуваалцсан сан руу холбогдсонгүй — өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана.":"Couldn't connect to the shared database — data is saved on this device only.",
 "Firebase тохируулаагүй байна — одоогоор өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана. (index.html доторх ТОХИРГОО хэсгийг бөглөнө үү)":"Firebase is not set up — data is saved on this device only for now. (Fill in the ТОХИРГОО / settings section in index.html)",

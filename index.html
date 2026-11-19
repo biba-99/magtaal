@@ -128,6 +128,11 @@ h3.sub{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing
 .lead .icon{background:#1d1915;border-color:#2a251f;color:#f5efe6}
 .lead .scroll{flex:1;overflow:auto;padding:16px 16px 40px}
 .lead .song{--chord:#f0a070}
+.lead .asbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #2a251f}
+.lead .asbar .asplay{flex:1;justify-content:center;display:flex;align-items:center;gap:6px;background:#1d1915;border:1px solid #2a251f;color:#f5efe6;border-radius:12px;padding:10px;font-size:15px;font-weight:600}
+.lead .asbar .asplay.on{background:#b4532a;border-color:#e48a5c}
+.lead .asbar .asv{min-width:64px;text-align:center;color:#a59a8d;font-size:13px;line-height:1.2}
+.lead .asbar .asv b{display:block;color:#f5efe6;font-size:17px}
 .lead .next{padding:10px 14px;border-top:1px solid #2a251f;color:#a59a8d;font-size:14px;display:flex;justify-content:space-between;gap:8px}
 .lead .ld-item{padding-bottom:30px;margin-bottom:28px;border-bottom:7px double #e48a5c}
 .lead .ld-item:last-of-type{border-bottom:0}
@@ -376,6 +381,12 @@ body.has-draft .sheet .body{padding-bottom:160px}
     <button class="icon" id="ld-ch">♪</button>
   </div>
   <div class="scroll" id="ld-scroll"><div id="ld-all" data-noi18n></div></div>
+  <div class="asbar">
+    <button class="asplay" id="as-play">▶ Автомат гүйлгэх</button>
+    <button class="icon" id="as-dn" aria-label="Удаашруулах">−</button>
+    <div class="asv"><b id="as-val" data-noi18n>3</b>хурд</div>
+    <button class="icon" id="as-up" aria-label="Хурдасгах">＋</button>
+  </div>
   <div class="next">
     <button class="icon" id="ld-prev">‹</button>
     <span id="ld-next" style="align-self:center;text-align:center;flex:1"></span>
@@ -1067,8 +1078,9 @@ function openTransPicker(i){
   const s=state.sets.get(curSet); if(!s||!canEditSet()) return;
   const items=s.items||[]; const it=items[i], nx=items[i+1]; if(!it||!nx) return;
   const kFrom=it.key||songOf(it)?.key||"", kTo=nx.key||songOf(nx)?.key||"";
-  let seq=[...(it.trans||[])], txt=it.transText||"";
-  const keepTxt=()=>{const el=document.getElementById("tr-txt"); if(el) txt=el.value};
+  let seq=[...(it.trans||[])], txt=it.transText||"", pos=i;
+  const keepTxt=()=>{const el=document.getElementById("tr-txt"); if(el) txt=el.value; const ps=document.getElementById("tr-pos"); if(ps) pos=+ps.value};
+  const hasT=x=>x&&(((x.trans||[]).length)||x.transText);
   const draw=()=>{
     const grid=arr=>arr.map(c=>`<button data-tch="${esc(c)}">${esc(c)}</button>`).join("");
     openModal(`<h2>Шилжилт</h2>
@@ -1081,6 +1093,9 @@ function openTransPicker(i){
       <div class="row" style="margin-top:4px"><input class="in" id="tr-in" placeholder="Өөр аккорд: F#m7, G/B…" autocapitalize="characters" style="flex:1"><button class="btn" id="tr-add">＋</button></div>
       <div class="cp-lbl" style="margin-top:14px">Өгүүлбэр / тайлбар</div>
       <textarea class="in" id="tr-txt" rows="2" style="min-height:64px;font-family:inherit" placeholder="Жишээ: Бөмбөр 4 хэмжээ дангаараа, дараа нь бүгд орно">${esc(txt)}</textarea>
+      ${items.length>2?`<div class="cp-lbl" style="margin-top:14px">Байрлал (аль дуунуудын хооронд)</div>
+      <select class="in" id="tr-pos" data-noi18n>${items.slice(0,-1).map((x,k)=>`<option value="${k}" ${k===pos?"selected":""}>${k+1}. ${esc(songOf(x)?.title||"?")} → ${k+2}. ${esc(songOf(items[k+1])?.title||"?")}${k!==i&&hasT(x)?" ⇄":""}</option>`).join("")}</select>
+      <div class="help" style="margin:4px 0 0">⇄ — тэнд байгаа шилжилттэй байраа солино</div>`:""}
       <div class="row" style="margin-top:14px">${((it.trans||[]).length||it.transText)?'<button class="btn small danger" id="tr-clear">Устгах</button>':""}<span style="flex:1"></span><button class="btn small" data-mclose>Болих</button><button class="btn primary" id="tr-ok">Хадгалах</button></div>`);
     document.getElementById("tr-in").onkeydown=e=>{if(e.key==="Enter")document.getElementById("tr-add").click()};
   };
@@ -1092,7 +1107,11 @@ function openTransPicker(i){
     if(b.dataset.tdel!==undefined){seq.splice(+b.dataset.tdel,1);draw();return}
     if(b.id==="tr-add"){const v=document.getElementById("tr-in").value.trim().replace(/^\[|\]$/g,"");if(v){seq.push(v);draw()}return}
     if(b.id==="tr-clear"){closeModal();updateSet(s=>{delete s.items[i].trans;delete s.items[i].transText});return}
-    if(b.id==="tr-ok"){const tx=txt.trim();closeModal();updateSet(s=>{if(seq.length)s.items[i].trans=seq;else delete s.items[i].trans;if(tx)s.items[i].transText=tx;else delete s.items[i].transText});return}
+    if(b.id==="tr-ok"){const tx=txt.trim(), to=pos;closeModal();updateSet(s=>{
+      const put=(x,t)=>{if(t.trans&&t.trans.length)x.trans=t.trans;else delete x.trans;if(t.transText)x.transText=t.transText;else delete x.transText};
+      const A=s.items[i], B=s.items[to]; const mine={trans:seq,transText:tx};
+      if(B&&to!==i){const theirs={trans:B.trans,transText:B.transText};put(B,mine);put(A,theirs)} else put(A,mine);
+    });return}
   };
 }
 function isSecHeader(l){return isSpecialLine(l)==="sec"&&!/^\s*\{/.test(l)}
@@ -1469,7 +1488,7 @@ function openMember(id){
 /* ---------------- Lead mode ---------------- */
 function openLead(setId){
   const s=state.sets.get(setId); if(!s||!(s.items||[]).length){toast("Жагсаалтад дуу алга");return}
-  lead.setId=setId; lead.idx=0; lead.rendered=null;
+  lead.setId=setId; lead.idx=0; lead.rendered=null; asStop();
   document.getElementById("lead").classList.add("on");
   renderLead();
   document.getElementById("ld-scroll").scrollTop=0; updateLeadCur();
@@ -1523,10 +1542,54 @@ function leadGo(d){
   const sc=document.getElementById("ld-scroll");
   sc.scrollTo({top:sc.scrollTop+el.getBoundingClientRect().top-sc.getBoundingClientRect().top,behavior:"smooth"});
 }
-function closeLead(){document.getElementById("lead").classList.remove("on");try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
+function closeLead(){asStop();document.getElementById("lead").classList.remove("on");try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
 document.getElementById("ld-close").onclick=closeLead;
-document.getElementById("ld-prev").onclick=()=>leadGo(-1);
-document.getElementById("ld-nextb").onclick=()=>leadGo(1);
+/* ---- Автомат гүйлгэлт ---- */
+const AS_LS="magtaal-autoscroll-speed";
+const as={on:false,speed:3,pos:0,last:0,raf:0,holdUntil:0,touching:false,wake:null};
+try{const v=+localStorage.getItem(AS_LS);if(v>=1&&v<=15)as.speed=v}catch(e){}
+function asPxPerSec(){return 6+as.speed*7}   // 1 → 13px/s … 15 → 111px/s
+function asRender(){
+  const b=document.getElementById("as-play");
+  b.classList.toggle("on",as.on); b.textContent=as.on?tr("⏸ Зогсоох"):tr("▶ Автомат гүйлгэх");
+  document.getElementById("as-val").textContent=as.speed;
+}
+function asTick(ts){
+  if(!as.on) return;
+  const sc=document.getElementById("ld-scroll");
+  const dt=as.last?Math.min(100,ts-as.last):0; as.last=ts;
+  if(Math.abs(sc.scrollTop-Math.round(as.pos))>2) as.pos=sc.scrollTop;   // хүн өөрөө гүйлгэсэн бол тэндээс үргэлжилнэ
+  if(!as.touching&&Date.now()>as.holdUntil){
+    as.pos+=asPxPerSec()*dt/1000;
+    const max=sc.scrollHeight-sc.clientHeight;
+    if(as.pos>=max){as.pos=max;sc.scrollTop=max;asStop();toast("Жагсаалтын төгсгөл");return}
+    sc.scrollTop=as.pos;
+  }
+  as.raf=requestAnimationFrame(asTick);
+}
+async function asStart(){
+  const sc=document.getElementById("ld-scroll");
+  as.on=true; as.pos=sc.scrollTop; as.last=0; asRender();
+  cancelAnimationFrame(as.raf); as.raf=requestAnimationFrame(asTick);
+  try{ if(navigator.wakeLock&&!as.wake){ as.wake=await navigator.wakeLock.request("screen"); as.wake.addEventListener("release",()=>{as.wake=null}) } }catch(e){}
+}
+function asStop(){
+  as.on=false; cancelAnimationFrame(as.raf); asRender();
+  try{ as.wake&&as.wake.release() }catch(e){} as.wake=null;
+}
+document.getElementById("as-play").onclick=()=>as.on?asStop():asStart();
+const asSet=d=>{as.speed=Math.max(1,Math.min(15,as.speed+d));try{localStorage.setItem(AS_LS,as.speed)}catch(e){}asRender()};
+document.getElementById("as-dn").onclick=()=>asSet(-1);
+document.getElementById("as-up").onclick=()=>asSet(1);
+(()=>{const sc=document.getElementById("ld-scroll");
+  sc.addEventListener("touchstart",()=>{as.touching=true},{passive:true});
+  const up=()=>{as.touching=false;as.holdUntil=Date.now()+900};
+  sc.addEventListener("touchend",up,{passive:true}); sc.addEventListener("touchcancel",up,{passive:true});
+  sc.addEventListener("wheel",()=>{as.holdUntil=Date.now()+700},{passive:true});
+  document.addEventListener("visibilitychange",async()=>{ if(as.on&&document.visibilityState==="visible"&&!as.wake){try{as.wake=await navigator.wakeLock.request("screen");as.wake.addEventListener("release",()=>{as.wake=null})}catch(e){}} });
+})();
+document.getElementById("ld-prev").onclick=()=>{as.holdUntil=Date.now()+1000;leadGo(-1)};
+document.getElementById("ld-nextb").onclick=()=>{as.holdUntil=Date.now()+1000;leadGo(1)};
 document.getElementById("ld-fsdn").onclick=()=>{if(lead.fs>12){lead.fs-=2;renderLead()}};
 document.getElementById("ld-fsup").onclick=()=>{if(lead.fs<40){lead.fs+=2;renderLead()}};
 document.getElementById("ld-ch").onclick=()=>{lead.chords=!lead.chords;renderLead()};
@@ -1797,7 +1860,7 @@ document.getElementById("teamlist").addEventListener("click",async e=>{
 const I18N={
 "Магтаалын":"Worship","баг":"Team","Магтаалын баг":"Worship Team",
 "Дуунууд":"Songs","Жагсаалт":"Setlists","Баг":"Team",
-"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
+"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
 "Холбогдож байна…":"Connecting…","Удаан байна…":"Taking a while…","Багтай хуваалцсан ✓":"Shared with team ✓","Хандах эрх алга":"No access",
 "Хуваалцсан сан руу холбогдсонгүй — өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана.":"Couldn't connect to the shared database — data is saved on this device only.",
 "Firebase тохируулаагүй байна — одоогоор өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана. (index.html доторх ТОХИРГОО хэсгийг бөглөнө үү)":"Firebase is not set up — data is saved on this device only for now. (Fill in the ТОХИРГОО / settings section in index.html)",

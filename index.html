@@ -105,7 +105,11 @@ label.f{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}
 textarea.in{min-height:320px;font-family:"JetBrains Mono",monospace;font-size:14px;line-height:1.5}
 .help{font-size:12.5px;color:var(--muted);background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;line-height:1.5}
 .help code{font-family:"JetBrains Mono",monospace;color:var(--accent)}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.grid2>*{min-width:0}
+.grid2.sd-grid{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+input[type=date].in{min-width:0;max-width:100%;-webkit-appearance:none;appearance:none;padding:11px 8px;font-size:15px;text-align:left}
+input[type=date].in::-webkit-date-and-time-value{text-align:left;margin:0}
 .sl-song{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;display:flex;gap:10px;align-items:center}
 .sl-song .n{width:24px;color:var(--muted);font-weight:600;text-align:center}
 .sl-song select{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:5px;font-family:"JetBrains Mono",monospace;font-weight:700;color:var(--accent)}
@@ -361,7 +365,7 @@ body.has-draft .sheet .body{padding-bottom:160px}
     <button class="btn primary small" id="sd-lead">▶ Удирдах</button>
   </div>
   <div class="body">
-    <div class="grid2">
+    <div class="grid2 sd-grid">
       <div><label class="f">Нэр</label><input class="in" id="sd-name"></div>
       <div><label class="f">Огноо</label><input class="in" type="date" id="sd-date"></div>
     </div>

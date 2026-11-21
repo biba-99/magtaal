@@ -179,6 +179,17 @@ h3.sub{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing
 .sl-song:has(.sl-note){flex-wrap:wrap}
 .sl-note{flex-basis:100%;margin-left:34px;width:calc(100% - 34px);padding:6px 9px;font-size:13px}
 .sl-act{display:flex;gap:6px;flex-shrink:0}
+.sl-song.sl-v{display:block;padding:10px 12px}
+.sl-v .sl-top{display:flex;gap:8px;align-items:baseline;min-width:0}
+.sl-v .sl-top .n{width:24px;flex-shrink:0}
+.sl-v .sl-top .t{flex:1;min-width:0;font-weight:700;font-size:16px;overflow-wrap:anywhere;line-height:1.3}
+.sl-v .sl-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 0 32px}
+.sl-v .sl-ctl{display:flex;align-items:center;gap:10px;margin:8px 0 0 32px;min-width:0}
+.sl-v .sl-ctl select{font-size:16px;padding:6px 8px;min-width:64px}
+.sl-v .mv{flex-direction:row;gap:4px}
+.sl-v .mv button{width:36px;height:36px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px}
+.sl-v .sl-note{display:block;margin:8px 0 0 32px;width:calc(100% - 32px);font-size:16px}
+.sl-trans{max-width:calc(100% - 34px)}
 .sl-act button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:18px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:center;padding:0}
 .sl-act button.rm{color:#c0392b}
 .sl-act button:active{background:var(--accent-soft)}
@@ -1491,12 +1502,12 @@ function renderSetDetail(fillInputs){
   const items=s.items||[];
   document.getElementById("sd-songs").innerHTML=items.length?items.map((it,i)=>{
     const song=songOf(it);
-    return `<div class="sl-song">
-      <span class="n">${i+1}</span>
-      <div class="grow" style="flex:1;min-width:0"><div class="t" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(song?.title||"(устгагдсан дуу)")}</div>
-      ${it.ov?`<div style="margin-top:3px"><span class="tag" style="background:var(--accent-soft);color:var(--accent);white-space:nowrap">✎ Засварласан</span>${(ro||!canEditSongs())?"":` <button class="btn ghost small" data-sreset="${i}" style="padding:2px 6px">↺ Анхных руу</button>${syncOvLyrics(it).n?` <button class="btn small" data-ssync="${i}" style="padding:2px 8px;border-color:var(--accent);color:var(--accent)">⟳ Сангаас үг шинэчлэх (<span data-noi18n>${syncOvLyrics(it).n}</span>)</button>`:""}`}</div>`:""}</div>
-      <select data-ikey="${i}" ${ro?"disabled":""}>${['<option value="">—</option>'].concat(KEYS.map(k=>`<option ${k===it.key?"selected":""}>${k}</option>`)).join("")}</select>
-      ${ro?"":`<div class="mv"><button data-up="${i}">▲</button><button data-dn="${i}">▼</button></div><div class="sl-act">${canEditSongs()?`<button data-sedit="${i}" title="Энэ жагсаалтад засах">✎</button>`:""}<button data-rm="${i}" class="rm" title="Хасах">✕</button></div>`}
+    const syn=it.ov&&!(ro||!canEditSongs())?syncOvLyrics(it).n:0;
+    return `<div class="sl-song sl-v">
+      <div class="sl-top"><span class="n">${i+1}</span><div class="t">${esc(song?.title||"(устгагдсан дуу)")}</div></div>
+      ${it.ov?`<div class="sl-tags"><span class="tag" style="background:var(--accent-soft);color:var(--accent);white-space:nowrap">✎ Засварласан</span>${(ro||!canEditSongs())?"":`<button class="btn ghost small" data-sreset="${i}" style="padding:2px 8px">↺ Анхных руу</button>${syn?`<button class="btn small" data-ssync="${i}" style="padding:2px 8px;border-color:var(--accent);color:var(--accent)">⟳ Сангаас үг шинэчлэх (<span data-noi18n>${syn}</span>)</button>`:""}`}</div>`:""}
+      <div class="sl-ctl"><select data-ikey="${i}" ${ro?"disabled":""}>${['<option value="">—</option>'].concat(KEYS.map(k=>`<option ${k===it.key?"selected":""}>${k}</option>`)).join("")}</select>
+      ${ro?"":`<div class="mv"><button data-up="${i}" aria-label="Дээш">▲</button><button data-dn="${i}" aria-label="Доош">▼</button></div><span style="flex:1"></span><div class="sl-act">${canEditSongs()?`<button data-sedit="${i}" title="Энэ жагсаалтад засах">✎</button>`:""}<button data-rm="${i}" class="rm" title="Хасах">✕</button></div>`}</div>
       <input class="in sl-note" data-note="${i}" value="${esc(it.note||"")}" placeholder="Тэмдэглэл (жишээ: 2 удаа дахилт)" ${ro?"disabled":""}>
     </div>${i<items.length-1?(((it.trans||[]).length||it.transText)?`<button class="sl-trans has" data-trans="${i}" ${ro?"disabled":""}><span class="tl">↪ Шилжилт</span>${(it.trans||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join("")}${ro?"":'<span class="te">✎</span>'}${it.transText?`<span class="tt" data-noi18n>${esc(it.transText)}</span>`:""}</button>`:(ro?"":`<button class="sl-trans" data-trans="${i}">＋ Шилжилт (аккорд, өгүүлбэр)</button>`)):""}`}).join(""):'<div class="empty" style="padding:16px">Дуу нэмээгүй байна</div>';
   const team=(s.team||[]).map((t,i)=>({...t,_i:i})).sort((a,b)=>((b.role==="Ахлагч")-(a.role==="Ахлагч"))||(isHead(state.members.get(b.memberId))-isHead(state.members.get(a.memberId)))||a._i-b._i);

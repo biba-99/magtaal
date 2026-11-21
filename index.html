@@ -89,6 +89,7 @@ header.top h1 span{color:var(--accent)}
 .song .ch,.song .sec,.song .cl{letter-spacing:0}
 .song .ln{margin:0 0 2px;white-space:normal}
 .song .seg{display:inline-flex;flex-direction:column;vertical-align:bottom;white-space:pre}
+.song .wd{display:inline-block;white-space:nowrap;vertical-align:bottom}
 .song .ch{font-family:"JetBrains Mono",monospace;font-weight:700;color:var(--chord);font-size:1.05em;line-height:1.15;min-height:1.15em;padding-right:.35em}
 .song.nochords .ch{display:none}
 .song .cl{display:flex;flex-wrap:wrap;gap:.2em 1.1em;margin:2px 0 4px}
@@ -127,6 +128,14 @@ h3.sub{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing
 .lead .lbar .ttl small{color:#a59a8d}
 .lead .icon{background:#1d1915;border-color:#2a251f;color:#f5efe6}
 .lead .scroll{flex:1;overflow:auto;padding:16px 16px 40px}
+.lead .ld-list{display:none;position:absolute;left:10px;right:10px;top:62px;z-index:5;max-height:65vh;overflow:auto;background:#1d1915;border:1px solid #3a3129;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:6px}
+.lead .ld-list.on{display:block}
+.lead .ld-list button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;color:#f5efe6;padding:11px 10px;border-radius:10px;font-size:16px}
+.lead .ld-list button.cur{background:#b4532a}
+.lead .ld-list button .n{width:26px;height:26px;border-radius:50%;background:#2a2016;color:#f0a070;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.lead .ld-list button.cur .n{background:#fff;color:#b4532a}
+.lead .ld-list button .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lead .ld-list button .k{color:#f0a070;font-family:"JetBrains Mono",monospace;font-weight:700;font-size:14px}
 .lead .song{--chord:#f0a070}
 .lead .asbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #2a251f}
 .lead .asbar .asplay{flex:1;justify-content:center;display:flex;align-items:center;gap:6px;background:#1d1915;border:1px solid #2a251f;color:#f5efe6;border-radius:12px;padding:10px;font-size:15px;font-weight:600}
@@ -375,11 +384,13 @@ body.has-draft .sheet .body{padding-bottom:160px}
 <div class="lead" id="lead">
   <div class="lbar">
     <button class="icon" id="ld-close">✕</button>
-    <div class="ttl"><b id="ld-title" data-noi18n></b><small id="ld-sub"></small></div>
+    <button class="icon" id="ld-menu" aria-label="Дуунууд">☰</button>
+    <div class="ttl" id="ld-ttl" style="cursor:pointer"><b id="ld-title" data-noi18n></b><small id="ld-sub"></small></div>
     <button class="icon" id="ld-fsdn" aria-label="Жижигрүүлэх" style="font-size:13px">A−</button>
     <button class="icon" id="ld-fsup" aria-label="Томруулах" style="font-size:17px">A+</button>
     <button class="icon" id="ld-ch">♪</button>
   </div>
+  <div class="ld-list" id="ld-list" data-noi18n></div>
   <div class="scroll" id="ld-scroll"><div id="ld-all" data-noi18n></div></div>
   <div class="asbar">
     <button class="asplay" id="as-play">▶ Автомат гүйлгэх</button>
@@ -447,10 +458,17 @@ function renderSong(text,steps,flat){
     if(!hasChord){out.push('<div class="ln">'+esc(line)+'</div>');continue}
     const allChords=segs.every(s=>!s.tx.trim());
     if(allChords){out.push('<div class="ln cl">'+segs.filter(s=>s.ch).map(s=>'<span class="ch">'+chHtml(s.ch)+'</span>').join("")+'</div>');continue}
-    out.push('<div class="ln">'+segs.map(s=>{
-      let tx=s.tx; if(!tx) tx=allChords?" ":"";
-      return '<span class="seg"><span class="ch">'+chHtml(s.ch)+'</span><span class="tx">'+(tx?esc(tx):"&nbsp;")+'</span></span>';
-    }).join("")+'</div>');
+    // урт мөр: үг бүрийг тусад нь (аккордтой нь) боож, дэлгэцэнд багтахгүй бол дараагийн мөр рүү шилжүүлнэ
+    const pieces=[];
+    for(const s of segs){
+      const parts=s.tx?(s.tx.match(/^\s+|\S+\s*/g)||[s.tx]):[""];
+      parts.forEach((t,k)=>pieces.push({ch:k?"":s.ch,tx:t}));
+    }
+    const words=[]; let w=[];
+    for(const pc of pieces){ w.push(pc); if(/\s$/.test(pc.tx)){words.push(w);w=[]} }
+    if(w.length) words.push(w);
+    const segH=pc=>'<span class="seg"><span class="ch">'+(pc.ch?chHtml(pc.ch):"")+'</span><span class="tx">'+(pc.tx?esc(pc.tx):"&nbsp;")+'</span></span>';
+    out.push('<div class="ln">'+words.map(w=>'<span class="wd">'+w.map(segH).join("")+'</span>').join("")+'</div>');
   }
   return out.join("");
 }
@@ -1662,15 +1680,27 @@ function updateLeadCur(){
   const nx=items[cur+1];
   document.getElementById("ld-next").textContent=nx?"Дараах: "+(songOf(nx)?.title||"?")+(nx.key?` (${nx.key})`:""):"Төгсгөл";
 }
-function leadGo(d){
+function leadGo(d){ leadJump(lead.idx+d) }
+function leadJump(n0){
   const s=state.sets.get(lead.setId); if(!s) return;
-  const n=Math.max(0,Math.min((s.items||[]).length-1,lead.idx+d));
+  const n=Math.max(0,Math.min((s.items||[]).length-1,n0));
   const el=document.querySelector(`#ld-all .ld-item[data-i="${n}"]`); if(!el) return;
   const sc=document.getElementById("ld-scroll");
   sc.scrollTo({top:sc.scrollTop+el.getBoundingClientRect().top-sc.getBoundingClientRect().top,behavior:"smooth"});
 }
-function closeLead(){asStop();document.getElementById("lead").classList.remove("on");try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
+function closeLead(){asStop();toggleLeadList(false);document.getElementById("lead").classList.remove("on");try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
 document.getElementById("ld-close").onclick=closeLead;
+function toggleLeadList(force){
+  const box=document.getElementById("ld-list"); const on=force!==undefined?force:!box.classList.contains("on");
+  if(on){ const s=state.sets.get(lead.setId); const items=(s&&s.items)||[];
+    box.innerHTML=items.map((it,i)=>{const so=songOf(it)||{title:"?"};const k=it.key||so.key||"";
+      return `<button data-lj="${i}" class="${i===lead.idx?"cur":""}"><span class="n">${i+1}</span><span class="t">${esc(so.title)}</span>${k?`<span class="k">${esc(k)}</span>`:""}</button>`}).join(""); }
+  box.classList.toggle("on",on);
+}
+document.getElementById("ld-menu").onclick=e=>{e.stopPropagation();toggleLeadList()};
+document.getElementById("ld-ttl").onclick=e=>{e.stopPropagation();toggleLeadList()};
+document.getElementById("ld-list").onclick=e=>{const b=e.target.closest("[data-lj]"); if(!b) return; toggleLeadList(false); as.holdUntil=Date.now()+1000; leadJump(+b.dataset.lj)};
+document.getElementById("ld-scroll").addEventListener("pointerdown",()=>toggleLeadList(false));
 /* ---- Автомат гүйлгэлт ---- */
 const AS_LS="magtaal-autoscroll-speed";
 const as={on:false,speed:3,pos:0,last:0,raf:0,holdUntil:0,touching:false,wake:null};

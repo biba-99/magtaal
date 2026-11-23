@@ -323,10 +323,10 @@ body.has-draft .sheet .body{padding-bottom:160px}
     <button class="btn" id="pi-open" style="width:100%;margin-bottom:10px;padding:12px">📋 Хуулж оруулах <span style="color:var(--muted);font-weight:400">(Worship Leader, OpenSong, текст)</span></button>
     <div id="ocr-box" style="display:none">
       <label class="ocr-drop" id="ocr-drop">
-        <input type="file" id="ocr-file" accept="image/*" multiple hidden>
+        <input type="file" id="ocr-file" accept="image/*,application/pdf,.pdf" multiple hidden>
         <div style="font-size:26px">📷</div>
-        <div style="font-weight:600">Зурагнаас таниулж оруулах</div>
-        <div style="font-size:13px;color:var(--muted)">Дууны ном, хуудасны зураг эсвэл скриншот сонгоно уу (олон хуудас бол хэд хэдийг зэрэг)</div>
+        <div style="font-weight:600">Зураг, PDF-ээс таниулж оруулах</div>
+        <div style="font-size:13px;color:var(--muted)">Дууны ном, хуудасны зураг, скриншот эсвэл PDF файл сонгоно уу (олон хуудас бол хэд хэдийг зэрэг)</div>
       </label>
       <div id="ocr-status" class="help" style="display:none"></div>
       <div class="row" id="ocr-actions" style="display:none;margin-top:8px"><button class="btn small" id="ocr-stop">Зогсоох</button></div>
@@ -1382,7 +1382,7 @@ function openOcrHelp(){
     <div class="help" style="margin:0 0 10px">Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.</div>
     <ol style="margin:0 0 12px;padding-left:20px;line-height:1.55">
       <li><b>Claude дээр нээх</b> товчийг дарна (Claude-д нэвтэрсэн байх хэрэгтэй).</li>
-      <li>Тэнд <b>+ Дуу нэмэх → 📷 Зурагнаас таниулж оруулах</b> дээр зургаа сонгоно.</li>
+      <li>Тэнд <b>+ Дуу нэмэх → 📷 Зураг, PDF-ээс таниулж оруулах</b> дээр зураг эсвэл PDF-ээ сонгоно.</li>
       <li>Таньж дуусахад гарах <b>📋 Апп руу хуулах</b> товчийг дарна.</li>
       <li>Энд буцаж ирээд <b>📋 Хуулж оруулах</b> дээр дарж буулгана.</li>
     </ol>
@@ -1430,10 +1430,44 @@ Rules for "body":
 "key": the song key if written, otherwise infer from the chords (e.g. "G", "Em"); empty string if unsure. Use one of: C C# Db D Eb E F F# Gb G Ab A Bb B, optionally followed by "m".
 "author", "bpm": empty string if not shown.
 "warnings": short note in Mongolian about any parts that were unreadable (empty string if none).`;
+/* PDF → хуудас бүрийг зураг болгоно (pdf.js, cdnjs) */
+function isPdf(f){return f&&(f.type==="application/pdf"||/\.pdf$/i.test(f.name||""))}
+let pdfLibP=null;
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+function loadPdfJs(){
+  if(!pdfLibP){ const base="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+    pdfLibP=loadScript(base+"pdf.min.js").then(()=>loadScript(base+"pdf.worker.min.js")).then(()=>{ const L=window.pdfjsLib||window["pdfjs-dist/build/pdf"]; L.GlobalWorkerOptions.workerSrc=base+"pdf.worker.min.js"; return L })
+      .catch(e=>{pdfLibP=null;throw e}); }
+  return pdfLibP;
+}
+async function expandPdfs(files,max){
+  const out=[];
+  for(const f of files){
+    if(out.length>=max) break;
+    if(!isPdf(f)){out.push(f);continue}
+    const L=await loadPdfJs();
+    const pdf=await L.getDocument({data:new Uint8Array(await f.arrayBuffer()),disableWorker:true,isEvalSupported:false}).promise;
+    for(let p=1;p<=pdf.numPages&&out.length<max;p++){
+      const page=await pdf.getPage(p); const v0=page.getViewport({scale:1});
+      const vp=page.getViewport({scale:Math.min(3,1800/Math.max(v0.width,v0.height))});
+      const c=document.createElement("canvas"); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
+      const ctx=c.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,c.width,c.height);
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.88));
+      out.push(new File([blob],(f.name||"pdf").replace(/\.pdf$/i,"")+"-"+p+".jpg",{type:"image/jpeg"}));
+    }
+  }
+  return out;
+}
 async function runOcr(files){
   if(!files.length) return;
   if(!getApiKey()){openSettings(true);return}
   const max=+document.getElementById("ocr-file").dataset.max||5;
+  if([...files].some(isPdf)){
+    const st0=document.getElementById("ocr-status"); st0.style.display=""; st0.textContent=tr("PDF-ийг уншиж байна…");
+    try{ files=await expandPdfs([...files],max) }catch(e){ st0.innerHTML='❌ '+esc(tr("PDF файлыг нээж чадсангүй. Хуудсыг зураг (скриншот) болгоод оруулна уу.")); document.getElementById("ocr-file").value=""; return }
+    if(!files.length){ st0.textContent=tr("PDF-д хуудас олдсонгүй"); return }
+  }
   const imgs=[...files].slice(0,max);
   const st=document.getElementById("ocr-status"),drop=document.getElementById("ocr-drop"),act=document.getElementById("ocr-actions");
   st.style.display="";drop.classList.add("busy");act.style.display="";
@@ -1468,7 +1502,7 @@ document.getElementById("ocr-stop").onclick=()=>ocrCtl&&ocrCtl.abort();
 document.getElementById("ed-key").onchange=e=>e.target.dataset.touched="1";
 const dropEl=document.getElementById("ocr-drop");
 dropEl.addEventListener("dragover",e=>{e.preventDefault()});
-dropEl.addEventListener("drop",e=>{e.preventDefault();runOcr([...e.dataTransfer.files].filter(f=>f.type.startsWith("image/")))});
+dropEl.addEventListener("drop",e=>{e.preventDefault();runOcr([...e.dataTransfer.files].filter(f=>f.type.startsWith("image/")||isPdf(f)))});
 document.getElementById("ed-conv").onclick=()=>{
   const ta=document.getElementById("ed-body");const before=ta.value;const after=convertAbove(before);
   if(before===after){toast("Хөрвүүлэх аккордын мөр олдсонгүй");return}
@@ -2033,7 +2067,7 @@ document.getElementById("teamlist").addEventListener("click",async e=>{
 const I18N={
 "Магтаалын":"Worship","баг":"Team","Магтаалын баг":"Worship Team",
 "Дуунууд":"Songs","Жагсаалт":"Setlists","Баг":"Team",
-"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Ижил хэсгүүдэд мөн засагдлаа":"Also updated in matching sections","📷 Зурагнаас таниулах":"📷 Recognize from a photo","Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.":"The photo is read with your Claude account — no extra cost or key.","Claude дээр нээх ↗":"Open in Claude ↗","Өөрийн API түлхүүрээр":"Use my own API key","📋 Апп руу хуулах":"📋 Copy to the app","Хуулсан — апп дээр «📋 Хуулж оруулах»-д буулгана уу":"Copied — paste it in the app under «📋 Paste import»","Үг шинэчлэгдлээ":"Lyrics updated","⟳ Сангаас үг шинэчлэх (":"⟳ Update lyrics from library (","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
+"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Зураг, PDF-ээс таниулж оруулах":"Import from a photo or PDF","PDF-ийг уншиж байна…":"Reading the PDF…","PDF файлыг нээж чадсангүй. Хуудсыг зураг (скриншот) болгоод оруулна уу.":"Couldn't open the PDF. Take a screenshot of the page and add that instead.","PDF-д хуудас олдсонгүй":"No pages found in the PDF","Ижил хэсгүүдэд мөн засагдлаа":"Also updated in matching sections","📷 Зурагнаас таниулах":"📷 Recognize from a photo","Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.":"The photo is read with your Claude account — no extra cost or key.","Claude дээр нээх ↗":"Open in Claude ↗","Өөрийн API түлхүүрээр":"Use my own API key","📋 Апп руу хуулах":"📋 Copy to the app","Хуулсан — апп дээр «📋 Хуулж оруулах»-д буулгана уу":"Copied — paste it in the app under «📋 Paste import»","Үг шинэчлэгдлээ":"Lyrics updated","⟳ Сангаас үг шинэчлэх (":"⟳ Update lyrics from library (","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
 "Холбогдож байна…":"Connecting…","Удаан байна…":"Taking a while…","Багтай хуваалцсан ✓":"Shared with team ✓","Хандах эрх алга":"No access",
 "Хуваалцсан сан руу холбогдсонгүй — өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана.":"Couldn't connect to the shared database — data is saved on this device only.",
 "Firebase тохируулаагүй байна — одоогоор өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана. (index.html доторх ТОХИРГОО хэсгийг бөглөнө үү)":"Firebase is not set up — data is saved on this device only for now. (Fill in the ТОХИРГОО / settings section in index.html)",
@@ -2054,7 +2088,7 @@ const I18N={
 "Нэр оруулмагц автоматаар хадгалагдана":"Saves automatically once you add a title","Нэр оруулмагц хадгалагдана":"Saves once you add a title",
 "Хадгалагдсан ✓":"Saved ✓","Хадгалж байна…":"Saving…","Хадгаллаа":"Saved",
 "Зурагнаас таниулж оруулах":"Import from a photo",
-"Дууны ном, хуудасны зураг эсвэл скриншот сонгоно уу (олон хуудас бол хэд хэдийг зэрэг)":"Choose a photo or screenshot of a song sheet (select several for multi-page songs)",
+"Дууны ном, хуудасны зураг, скриншот эсвэл PDF файл сонгоно уу (олон хуудас бол хэд хэдийг зэрэг)":"Choose a photo, screenshot or PDF of a song sheet (select several for multi-page songs)",
 "Зогсоох":"Stop","⏳ Зургийг уншиж байна… (30–60 секунд орчим)":"⏳ Reading the image… (about 30–60 seconds)",
 "✅ Таньж оруулсан. Үг, аккордыг нэг шалгаад":"✅ Imported. Check the lyrics and chords, then tap","дарна уу.":".",
 "Дууны нэр":"Song title","Жишээ: Их Эзэн минь":"e.g. Lord, I Praise You","Зохиогч / Орчуулга":"Author / Translator",

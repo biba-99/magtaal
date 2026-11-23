@@ -62,6 +62,10 @@ header.top h1 span{color:var(--accent)}
 .fab:active{transform:scale(.96)}
 .empty{text-align:center;color:var(--muted);padding:40px 10px;line-height:1.5}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.qrow{display:flex;gap:8px;align-items:center}.qrow .search{flex:1;min-width:0}.qrow .btn{white-space:nowrap}
+.selbar{position:sticky;top:0;z-index:5;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.ck{width:22px;height:22px;flex:none;border:2px solid var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.item.sel{outline:2px solid var(--accent,#2563eb)}.item.sel .ck{background:var(--accent,#2563eb);border-color:var(--accent,#2563eb);color:#fff}
 .undo-btn{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700;white-space:nowrap}
 .chips.hscroll{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-snap-type:x proximity}
 .chips.hscroll::-webkit-scrollbar{display:none}
@@ -264,7 +268,8 @@ body.has-draft .sheet .body{padding-bottom:160px}
 
   <!-- SONGS -->
   <section class="view on" id="v-songs">
-    <input class="search" id="q" placeholder="Дуу хайх (нэр, үг, шошго)…" autocomplete="off">
+    <div class="qrow"><input class="search" id="q" placeholder="Дуу хайх (нэр, үг, шошго)…" autocomplete="off"><button class="btn small" id="selBtn" style="display:none">☑ Сонгох</button></div>
+    <div class="selbar" id="selbar" style="display:none"><span id="selN" style="flex:1;font-weight:600"></span><button class="btn small" id="selAll">Бүгдийг сонгох</button><button class="btn small danger" id="selDel">🗑 Устгах</button><button class="btn small" id="selX" title="Болих">✕</button></div>
     <div class="chips" id="tagchips"></div>
     <div class="list" id="songlist"></div>
   </section>
@@ -558,7 +563,8 @@ function renderUndo(){const b=document.getElementById("undoBtn"); if(b) b.style.
 async function doUndo(){
   const u=undoStack.pop(); try{localStorage.setItem(UNDO_LS,JSON.stringify(undoStack))}catch(e){} renderUndo();
   if(!u) return;
-  for(const it of u.items){ if(it.data) await save(it.col,it.id,structuredClone(it.data)); else await remove(it.col,it.id,true); }
+  if(u.items.length>10){ let k=0; const w=async()=>{ while(k<u.items.length){ const it=u.items[k++]; if(it.data) await save(it.col,it.id,structuredClone(it.data)); else await remove(it.col,it.id,true); } }; await Promise.all([...Array(8)].map(w)); }
+  else for(const it of u.items){ if(it.data) await save(it.col,it.id,structuredClone(it.data)); else await remove(it.col,it.id,true); }
   toast("«"+u.label+"» сэргээлээ");
 }
 function handleWriteErr(e){
@@ -666,6 +672,31 @@ function renderAll(){
   document.getElementById("fab").style.display=fabVisible()?"":"none";renderUndo();renderDraftBar();renderReqBadge();
 }
 
+/* ---- Олон дуу сонгож устгах (зөвхөн эзэмшигч) ---- */
+let selMode=false, selSongs=new Set(), songListIds=[];
+function canBulk(){return mode==="db"?(isOwner&&canWrite):canWrite}
+function renderSelBar(){
+  const b=document.getElementById("selBtn"); if(b) b.style.display=canBulk()&&!selMode&&state.songs.size?"":"none";
+  const bar=document.getElementById("selbar"); if(!bar) return;
+  bar.style.display=selMode?"":"none";
+  if(selMode){ document.getElementById("selN").textContent=selSongs.size+" "+tr("сонгосон");
+    const allOn=songListIds.length&&songListIds.every(id=>selSongs.has(id));
+    document.getElementById("selAll").textContent=tr(allOn?"Сонголтыг арилгах":"Бүгдийг сонгох")+(allOn?"":" ("+songListIds.length+")");
+    document.getElementById("selDel").disabled=!selSongs.size; }
+}
+function exitSel(){selMode=false;selSongs.clear();renderSongs()}
+async function bulkDeleteSongs(ids){
+  const items=ids.filter(id=>state.songs.has(id)).map(id=>({col:"songs",id,data:structuredClone(state.songs.get(id))}));
+  if(!items.length) return;
+  pushUndo(items.length+" дуу",items);
+  for(const it of items) state.songs.delete(it.id);
+  exitSel(); renderAll();
+  if(mode!=="db"){lsSave();toast(items.length+" "+tr("дуу устгалаа"));return}
+  let k=0, fail=0; const worker=async()=>{ while(k<items.length){ const it=items[k++]; try{await fdb.collection("songs").doc(it.id).delete()}catch(e){fail++; if(fail===1) handleWriteErr(e)} } };
+  await Promise.all([...Array(8)].map(worker));
+  for(const it of items) if(it.data.audio) deleteAudio(it.data.audio);
+  toast(fail?tr("Зарим дууг устгаж чадсангүй"):items.length+" "+tr("дуу устгалаа"));
+}
 function renderSongs(){
   const tags=new Map();
   for(const [,s] of state.songs) for(const t of (s.tags||[])) tags.set(t,(tags.get(t)||0)+1);
@@ -681,8 +712,9 @@ function renderSongs(){
   const el=document.getElementById("songlist");
   if(!state.songs.size){el.innerHTML=`<div class="empty">${mode==="loading"?"Ачаалж байна…":(canEditSongs()?"Дууны сан хоосон байна.<br>Доорх <b>+</b> товчоор анхны дуугаа нэмээрэй.":"Дууны сан хоосон байна.")}</div>`;return}
   if(!list.length){el.innerHTML='<div class="empty">Тохирох дуу олдсонгүй.</div>';return}
-  el.innerHTML=list.map(([id,s])=>`<button class="item" data-song="${id}">
-    <span class="keybadge">${esc(s.key||"–")}</span>
+  songListIds=list.map(([id])=>id); renderSelBar();
+  el.innerHTML=list.map(([id,s])=>`<button class="item${selMode&&selSongs.has(id)?" sel":""}" data-song="${id}">
+    ${selMode?`<span class="ck">${selSongs.has(id)?"✓":""}</span>`:""}<span class="keybadge">${esc(s.key||"–")}</span>
     <span class="grow"><div class="t">${esc(s.title||"Нэргүй")}</div>
     <div class="s">${esc(s.author||"")}${s.bpm?` · ${esc(s.bpm)} BPM`:""}${s.link?" · 🔗":""}${s.audio?" · 🎵":""}</div></span></button>`).join("");
 }
@@ -1828,7 +1860,15 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
 document.getElementById("fab").onclick=()=>{ if(tab==="songs"){if(canEditSongs())openEditor();else toast("Дуу засахыг зөвхөн эзэмшигч хийнэ")} else if(tab==="sets")newSet(); else openMember(); };
 document.getElementById("q").oninput=e=>{query=e.target.value;renderSongs()};
 document.getElementById("tagchips").onclick=e=>{const b=e.target.closest("[data-tag]");if(b){tagFilter=tagFilter===b.dataset.tag?null:b.dataset.tag;renderSongs()}};
-document.getElementById("songlist").onclick=e=>{const b=e.target.closest("[data-song]");if(b)openSong(b.dataset.song)};
+document.getElementById("songlist").onclick=e=>{const b=e.target.closest("[data-song]");if(!b)return;
+  if(selMode){const id=b.dataset.song; selSongs.has(id)?selSongs.delete(id):selSongs.add(id); b.classList.toggle("sel",selSongs.has(id)); b.querySelector(".ck").textContent=selSongs.has(id)?"✓":""; renderSelBar(); return}
+  openSong(b.dataset.song)};
+document.getElementById("selBtn").onclick=()=>{if(!canBulk())return; selMode=true; selSongs.clear(); renderSongs()};
+document.getElementById("selX").onclick=exitSel;
+document.getElementById("selAll").onclick=()=>{const allOn=songListIds.length&&songListIds.every(id=>selSongs.has(id)); if(allOn) songListIds.forEach(id=>selSongs.delete(id)); else songListIds.forEach(id=>selSongs.add(id)); renderSongs()};
+document.getElementById("selDel").onclick=()=>{const ids=[...selSongs]; if(!ids.length) return;
+  const used=new Set(); for(const [,st] of state.sets) for(const it of (st.items||[])) if(it.songId&&selSongs.has(it.songId)&&!it.ov) used.add(it.songId);
+  confirmBox(ids.length+" "+tr("дууг устгах уу?"),(used.size?"⚠ "+used.size+" "+tr("дуу жагсаалтад ашиглагдаж байгаа тул тэндээс алга болно.")+" ":"")+tr("«↶ Буцаах»-аар сэргээж болно."),()=>bulkDeleteSongs(ids))};
 document.getElementById("setlist").onclick=e=>{const r=e.target.closest("[data-req]");if(r){openReview(r.dataset.req);return}const b=e.target.closest("[data-set]");if(b)openSet(b.dataset.set)};
 document.getElementById("teamlist").addEventListener("click",e=>{
   const tf=e.target.closest("[data-tf]"); if(tf){teamFilter=tf.dataset.tf||null;teamGroup=false;renderTeam();return}
@@ -2067,7 +2107,7 @@ document.getElementById("teamlist").addEventListener("click",async e=>{
 const I18N={
 "Магтаалын":"Worship","баг":"Team","Магтаалын баг":"Worship Team",
 "Дуунууд":"Songs","Жагсаалт":"Setlists","Баг":"Team",
-"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","Зураг, PDF-ээс таниулж оруулах":"Import from a photo or PDF","PDF-ийг уншиж байна…":"Reading the PDF…","PDF файлыг нээж чадсангүй. Хуудсыг зураг (скриншот) болгоод оруулна уу.":"Couldn't open the PDF. Take a screenshot of the page and add that instead.","PDF-д хуудас олдсонгүй":"No pages found in the PDF","Ижил хэсгүүдэд мөн засагдлаа":"Also updated in matching sections","📷 Зурагнаас таниулах":"📷 Recognize from a photo","Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.":"The photo is read with your Claude account — no extra cost or key.","Claude дээр нээх ↗":"Open in Claude ↗","Өөрийн API түлхүүрээр":"Use my own API key","📋 Апп руу хуулах":"📋 Copy to the app","Хуулсан — апп дээр «📋 Хуулж оруулах»-д буулгана уу":"Copied — paste it in the app under «📋 Paste import»","Үг шинэчлэгдлээ":"Lyrics updated","⟳ Сангаас үг шинэчлэх (":"⟳ Update lyrics from library (","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
+"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","☑ Сонгох":"☑ Select","сонгосон":"selected","Бүгдийг сонгох":"Select all","Сонголтыг арилгах":"Clear selection","🗑 Устгах":"🗑 Delete","дууг устгах уу?":"songs — delete?","дуу жагсаалтад ашиглагдаж байгаа тул тэндээс алга болно.":"of them are used in setlists and will disappear there.","«↶ Буцаах»-аар сэргээж болно.":"You can restore with «↶ Undo».","дуу устгалаа":"songs deleted","Зарим дууг устгаж чадсангүй":"Some songs couldn't be deleted","Зураг, PDF-ээс таниулж оруулах":"Import from a photo or PDF","PDF-ийг уншиж байна…":"Reading the PDF…","PDF файлыг нээж чадсангүй. Хуудсыг зураг (скриншот) болгоод оруулна уу.":"Couldn't open the PDF. Take a screenshot of the page and add that instead.","PDF-д хуудас олдсонгүй":"No pages found in the PDF","Ижил хэсгүүдэд мөн засагдлаа":"Also updated in matching sections","📷 Зурагнаас таниулах":"📷 Recognize from a photo","Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.":"The photo is read with your Claude account — no extra cost or key.","Claude дээр нээх ↗":"Open in Claude ↗","Өөрийн API түлхүүрээр":"Use my own API key","📋 Апп руу хуулах":"📋 Copy to the app","Хуулсан — апп дээр «📋 Хуулж оруулах»-д буулгана уу":"Copied — paste it in the app under «📋 Paste import»","Үг шинэчлэгдлээ":"Lyrics updated","⟳ Сангаас үг шинэчлэх (":"⟳ Update lyrics from library (","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
 "Холбогдож байна…":"Connecting…","Удаан байна…":"Taking a while…","Багтай хуваалцсан ✓":"Shared with team ✓","Хандах эрх алга":"No access",
 "Хуваалцсан сан руу холбогдсонгүй — өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана.":"Couldn't connect to the shared database — data is saved on this device only.",
 "Firebase тохируулаагүй байна — одоогоор өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана. (index.html доторх ТОХИРГОО хэсгийг бөглөнө үү)":"Firebase is not set up — data is saved on this device only for now. (Fill in the ТОХИРГОО / settings section in index.html)",

@@ -1213,7 +1213,7 @@ function openChordPicker(li,pos){
       <button class="btn small" data-ch="_" style="width:100%;margin:0 0 10px;border-style:dashed">␣ Хоосон зай үлдээх</button>
       <div class="row" style="margin-top:4px"><input class="in" id="cp-in" placeholder="Өөр аккорд: F#m7, G/B…" value="${esc(cur)}" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1"><button class="btn primary" id="cp-ok">OK</button></div>
       <div class="row" style="margin-top:12px">
-        ${cur?`<button class="btn small" id="cp-left">◀ Зөөх</button><button class="btn small" id="cp-right">Зөөх ▶</button><span style="flex:1"></span><button class="btn small danger" id="cp-del">Устгах</button>`:`<span style="flex:1"></span>`}
+        ${cur?`<button class="btn small" id="cp-left" title="← сум">◀ Зөөх</button><button class="btn small" id="cp-right" title="→ сум">Зөөх ▶</button><span style="flex:1"></span><button class="btn small danger" id="cp-del">Устгах</button>`:`<span style="flex:1"></span>`}
         <button class="btn small" data-mclose>Хаах</button></div>`);
     const box=document.getElementById("modalBox");
     box.onclick=e=>{
@@ -1879,6 +1879,15 @@ document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>hide(b.datase
 function openModal(html){document.getElementById("modalBox").innerHTML=html;document.getElementById("modal").classList.add("on")}
 function closeModal(){document.getElementById("modal").classList.remove("on")}
 document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal"||e.target.closest("[data-mclose]"))closeModal()});
+/* Аккорд зөөх: гарын ◀ ▶ сум */
+document.addEventListener("keydown",e=>{
+  if(!document.getElementById("modal").classList.contains("on")) return;
+  if(e.key==="Escape"){closeModal();return}
+  if(e.key!=="ArrowLeft"&&e.key!=="ArrowRight") return;
+  const t=e.target; if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA")&&t.value!=="") return;
+  const b=document.getElementById(e.key==="ArrowLeft"?"cp-left":"cp-right"); if(!b) return;
+  e.preventDefault(); if(t&&t.tagName==="INPUT") t.blur(); b.click();
+});
 function confirmBox(title,sub,ok){
   openModal(`<h2>${esc(title)}</h2><p style="color:var(--muted);margin:4px 0 14px">${esc(sub)}</p><div class="row"><button class="btn" data-mclose style="flex:1">Болих</button><button class="btn primary" id="cf-ok" style="flex:1;background:#c0392b;border-color:#c0392b">Устгах</button></div>`);
   document.getElementById("cf-ok").onclick=()=>{closeModal();ok()};

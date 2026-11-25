@@ -578,13 +578,15 @@ function handleWriteErr(e){
   if(e&&e.code==="permission-denied") toast("Танд засах эрх алга — эзэмшигчээс эрх хүсээрэй");
   else toast("Хадгалж чадсангүй — интернэтээ шалгаад дахин оролдоно уу");
 }
+/* Хуудасны дээд мэдэгдэл: 10 секундын дараа алга болно */
+let noticeT;
+function showNotice(t){const el=document.getElementById("offline"); el.textContent=t; el.style.display="block"; clearTimeout(noticeT); noticeT=setTimeout(()=>{el.style.display="none"},10000)}
 function startLocal(reason){
   mode="local"; canWrite=true;
   const o=lsLoad();
   for(const c of COLS){state[c]=new Map(Object.entries(o[c]||{}))}
   setStatus("Энэ төхөөрөмж дээр");
-  const off=document.getElementById("offline");
-  off.textContent=reason; off.style.display="block";
+  showNotice(reason);
   renderAll();
 }
 function subscribe(col,onErr){
@@ -603,7 +605,7 @@ function init(){
   firebase.initializeApp(FIREBASE_CONFIG);
   fdb=firebase.firestore(); auth=firebase.auth();
   mode="db"; setStatus("");
-  const timer=setTimeout(()=>{if(!state.songs.size){const off=document.getElementById("offline");off.textContent="Сантай холбогдох хүлээгдэж байна. Интернэтээ шалгана уу.";off.style.display="block"}},10000);
+  const timer=setTimeout(()=>{if(!state.songs.size){showNotice("Сантай холбогдох хүлээгдэж байна. Интернэтээ шалгана уу.")}},10000);
   subscribe("songs"); subscribe("sets");
   fdb.collection("songs").limit(1).get().then(()=>clearTimeout(timer)).catch(()=>{});
   document.getElementById("authBtn").style.display="";

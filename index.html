@@ -62,7 +62,8 @@ header.top h1 span{color:var(--accent)}
 .fab:active{transform:scale(.96)}
 .empty{text-align:center;color:var(--muted);padding:40px 10px;line-height:1.5}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.qrow{display:flex;gap:8px;align-items:center}.qrow .search{flex:1;min-width:0}.qrow .btn{white-space:nowrap}
+.qrow{display:flex;gap:8px;align-items:center}.qrow .search{flex:1;min-width:0}
+.qwrap{position:relative;flex:1;min-width:0;display:flex}.qwrap .search{padding-right:40px}.qclr{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;border-radius:50%;background:var(--line);color:var(--muted);font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0}.qrow .btn{white-space:nowrap}
 .selbar{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:7;max-width:640px;margin:0 auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:2px solid var(--accent);border-radius:14px;background:var(--card);box-shadow:0 8px 24px rgba(0,0,0,.25)}
 body.sel-on #songlist{padding-bottom:190px}
 .selacts{flex-basis:100%;display:flex;gap:6px}.selacts .btn{flex:1;padding-left:4px;padding-right:4px}
@@ -277,7 +278,7 @@ body.has-draft .sheet .body{padding-bottom:160px}
 
   <!-- SONGS -->
   <section class="view on" id="v-songs">
-    <div class="qrow"><input class="search" id="q" placeholder="Дуу хайх (нэр, үг, шошго)…" autocomplete="off"><button class="btn small" id="selBtn" style="display:none">☑ Сонгох</button></div>
+    <div class="qrow"><div class="qwrap"><input class="search" id="q" placeholder="Дуу хайх (нэр, үг, шошго)…" autocomplete="off"><button class="qclr" id="qclr" aria-label="Арилгах" style="display:none">✕</button></div><button class="btn small" id="selBtn" style="display:none">☑ Сонгох</button></div>
     <div class="selbar" id="selbar" style="display:none"><span id="selN"></span><button class="btn small" id="selAll">Бүгдийг сонгох</button><span style="flex:1"></span><button class="btn small" id="selX" title="Болих">✕</button><div class="selacts"><button class="btn small" id="selSet">＋ Жагсаалт</button><button class="btn small" id="selTag" title="Багц">🏷 Багц</button><button class="btn small danger" id="selDel" title="Устгах">🗑 Устгах</button></div></div>
     <div class="chips" id="tagchips"></div>
     <div class="list" id="songlist"></div>
@@ -526,6 +527,8 @@ function fabVisible(){if(tab==="songs"&&typeof selMode!=="undefined"&&selMode)re
 function canPropose(){return mode==="db"&&!!me&&!isEditor}
 function canEditSet(){return canWrite||canPropose()}
 function canEditMembers(){return mode!=="db"||isOwner}
+/* Засах эрхтэй гишүүн жагсаалтын дууны үг/аккордыг шууд өөрчлөхгүй — эзэмшигчид хүсэлт илгээнэ */
+function lyricsByRequest(){return mode==="db"&&!isOwner&&isEditor&&!!me}
 /* ---- Багц (groups): эзэмшигч болон засах эрхтэй хүмүүс үүсгэнэ; зөвхөн өөрийнхөө үүсгэснийг засна ---- */
 function myEmail(){return String((me&&me.email)||"").toLowerCase()}
 function canGroup(){return mode!=="db"||isOwner||(isEditor&&canWrite)}
@@ -654,7 +657,7 @@ function init(){
     if(unsubReq){unsubReq();unsubReq=null} pendReqs=new Map(); myReqs=new Map();
     loadDrafts(); overlayDrafts();
     if(isOwner) unsubReq=fdb.collection("requests").where("status","==","pending").onSnapshot(sn=>{pendReqs=new Map();sn.forEach(d=>pendReqs.set(d.id,d.data()));renderAll()},()=>{});
-    else if(u&&!isEditor) unsubReq=fdb.collection("requests").where("by","==",u.email.toLowerCase()).onSnapshot(sn=>{myReqs=new Map();sn.forEach(d=>myReqs.set(d.id,d.data()));renderAll()},()=>{});
+    else if(u) unsubReq=fdb.collection("requests").where("by","==",u.email.toLowerCase()).onSnapshot(sn=>{myReqs=new Map();sn.forEach(d=>myReqs.set(d.id,d.data()));renderAll()},()=>{});
     renderAuth(); renderAll();
     if(u&&!isEditor) toast("Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.");
   });
@@ -929,7 +932,7 @@ function setEditorCtx(on){
   if(on) document.getElementById("ed-del").style.display="none";
 }
 function openSetItemEditor(setId,idx){
-  if(!canEditSongs()){toast("Дуу засахыг зөвхөн эзэмшигч хийнэ");return}
+  if(!canEditSongs()&&!lyricsByRequest()){toast("Дуу засахыг зөвхөн эзэмшигч хийнэ");return}
   const s=state.sets.get(setId); const it=s&&s.items[idx]; if(!it||!canWrite) return;
   const song=songOf(it); if(!song){toast("Дуу олдсонгүй");return}
   openEditor(it.songId);
@@ -945,6 +948,9 @@ function openSetItemEditor(setId,idx){
   document.getElementById("ed-body").value=plainOf(edFull);
   setEdMode(edFull.trim()?"vis":"text");
   setEditorCtx(true); setEdStatus("");
+  editCtx.req=lyricsByRequest(); editCtx.base={key:d.key||"",body:(d.body||"").replace(/\r/g,"")};
+  ["ed-title","ed-author","ed-bpm","ed-link"].forEach(i=>document.getElementById(i).disabled=editCtx.req);
+  if(editCtx.req){ const c=document.getElementById("ed-ctx"); c.innerHTML="✎ <b>"+tr("Таны засвар хүсэлт болж эзэмшигчид очно.")+"</b> "+tr("Эзэмшигч зөвшөөрсний дараа жагсаалтад өөрчлөгдөнө."); }
 }
 function openEditor(id){
   editCtx=null; setEditorCtx(false);
@@ -985,6 +991,7 @@ function scheduleAutosave(){
 function doAutosave(){
   clearTimeout(autoT);
   const data=editorData(); if(!data.title) return saveChain;
+  if(editCtx&&editCtx.req){ const ch=(data.key||"")!==editCtx.base.key||(data.body||"")!==editCtx.base.body; setEdStatus(ch?tr("Хаахад хүсэлт илгээгдэнэ"):""); return saveChain }
   if(editCtx){
     const {setId,idx,songId}=editCtx; const s0=state.sets.get(setId); const it=s0&&s0.items[idx];
     if(!it||it.songId!==songId) return saveChain;
@@ -1016,6 +1023,10 @@ async function finishEditing(){
   const t=document.getElementById("ed-title").value.trim();
   const d=editorData();
   if(!t && d.body.trim()){toast("Дууны нэрээ бичнэ үү — нэргүй бол хадгалагдахгүй");document.getElementById("ed-title").focus();return}
+  if(editCtx&&editCtx.req){ const ctx=editCtx; editCtx=null; hide("editSheet"); setEditorCtx(false);
+    ["ed-title","ed-author","ed-bpm","ed-link"].forEach(i=>document.getElementById(i).disabled=false);
+    if((d.key||"")!==ctx.base.key||(d.body||"")!==ctx.base.body) await sendLyricsRequest(ctx,{key:d.key||"",body:d.body||""});
+    return; }
   if(t) await doAutosave();
   hide("editSheet");
   if(editCtx){editCtx=null;setEditorCtx(false);return}
@@ -1673,7 +1684,7 @@ function renderSetDetail(fillInputs){
       <div class="sl-top${song?" open":""}" ${song?`data-sopen="${i}" title="Зөвхөн энэ дууг харах"`:""}><span class="n">${i+1}</span><div class="t">${esc(song?.title||"(устгагдсан дуу)")}</div>${song?'<span class="go">▶</span>':""}</div>
       ${it.ov?`<div class="sl-tags"><span class="tag" style="background:var(--accent-soft);color:var(--accent);white-space:nowrap">✎ Засварласан</span>${(ro||!canEditSongs())?"":`<button class="btn ghost small" data-sreset="${i}" style="padding:2px 8px">↺ Анхных руу</button>${syn?`<button class="btn small" data-ssync="${i}" style="padding:2px 8px;border-color:var(--accent);color:var(--accent)">⟳ Сангаас үг шинэчлэх (<span data-noi18n>${syn}</span>)</button>`:""}`}</div>`:""}
       <div class="sl-ctl"><select data-ikey="${i}" ${ro?"disabled":""}>${['<option value="">—</option>'].concat(KEYS.map(k=>`<option ${k===it.key?"selected":""}>${k}</option>`)).join("")}</select>
-      ${ro?"":`<div class="mv"><button data-up="${i}" aria-label="Дээш">▲</button><button data-dn="${i}" aria-label="Доош">▼</button></div><span style="flex:1"></span><div class="sl-act">${canEditSongs()?`<button data-sedit="${i}" title="Энэ жагсаалтад засах">✎</button>`:""}<button data-rm="${i}" class="rm" title="Хасах">✕</button></div>`}</div>
+      ${ro?"":`<div class="mv"><button data-up="${i}" aria-label="Дээш">▲</button><button data-dn="${i}" aria-label="Доош">▼</button></div><span style="flex:1"></span><div class="sl-act">${(canEditSongs()||lyricsByRequest())?`<button data-sedit="${i}" title="Энэ жагсаалтад засах">✎</button>`:""}<button data-rm="${i}" class="rm" title="Хасах">✕</button></div>`}</div>
       <input class="in sl-note" data-note="${i}" value="${esc(it.note||"")}" placeholder="Тэмдэглэл (жишээ: 2 удаа дахилт)" ${ro?"disabled":""}>
     </div>${i<items.length-1?(((it.trans||[]).length||it.transText)?`<button class="sl-trans has" data-trans="${i}" ${ro?"disabled":""}><span class="tl">↪ Шилжилт</span>${(it.trans||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join("")}${ro?"":'<span class="te">✎</span>'}${it.transText?`<span class="tt" data-noi18n>${esc(it.transText)}</span>`:""}</button>`:(ro?"":`<button class="sl-trans" data-trans="${i}">＋ Шилжилт (аккорд, өгүүлбэр)</button>`)):""}`}).join(""):'<div class="empty" style="padding:16px">Дуу нэмээгүй байна</div>';
   const team=(s.team||[]).map((t,i)=>({...t,_i:i})).sort((a,b)=>((b.role==="Ахлагч")-(a.role==="Ахлагч"))||(isHead(state.members.get(b.memberId))-isHead(state.members.get(a.memberId)))||a._i-b._i);
@@ -1981,7 +1992,8 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
   window.scrollTo(0,0);
 });
 document.getElementById("fab").onclick=()=>{ if(tab==="songs"){if(canEditSongs())openEditor();else toast("Дуу засахыг зөвхөн эзэмшигч хийнэ")} else if(tab==="sets")newSet(); else openMember(); };
-document.getElementById("q").oninput=e=>{query=e.target.value;renderSongs()};
+document.getElementById("q").oninput=e=>{query=e.target.value;document.getElementById("qclr").style.display=query?"":"none";renderSongs()};
+document.getElementById("qclr").onclick=()=>{const q=document.getElementById("q");q.value="";query="";document.getElementById("qclr").style.display="none";renderSongs();q.focus()};
 /* Багц: дарахад шүүнэ, удаан дарахад нэр солих / устгах */
 (()=>{const C=document.getElementById("tagchips"); let tm=null,x0=0,y0=0,fired=false; const cancel=()=>{clearTimeout(tm);tm=null};
   C.addEventListener("pointerdown",e=>{const b=e.target.closest("[data-tag]"); if(!b||(e.pointerType==="mouse"&&e.button!==0)) return; fired=false; x0=e.clientX; y0=e.clientY; cancel();
@@ -2086,15 +2098,53 @@ function reqHeadHtml(){
   let h="";
   if(isOwner&&pendReqs.size){
     const L=[...pendReqs.entries()].sort((a,b)=>(b[1].createdAt||0)-(a[1].createdAt||0));
-    h+=`<div class="reqbox"><div style="font-weight:700;margin:2px 4px 8px">📨 Засварын хүсэлт (<span data-noi18n>${L.length}</span>)</div><div class="list" style="margin:0">${L.map(([rid,r])=>`<button class="item" data-req="${rid}"><span class="grow"><div class="t" data-noi18n>${esc(r.setName||r.data?.name||"")}</div><div class="s"><span data-noi18n>${esc(r.byName||r.by)}</span> · ${r.isNew?tr("шинэ жагсаалт"):tr("засвар")} · <span data-noi18n>${fmtTime(r.createdAt)}</span></div></span><span class="rqst pending">Хянах ›</span></button>`).join("")}</div></div>`;
+    h+=`<div class="reqbox"><div style="font-weight:700;margin:2px 4px 8px">📨 Засварын хүсэлт (<span data-noi18n>${L.length}</span>)</div><div class="list" style="margin:0">${L.map(([rid,r])=>`<button class="item" data-req="${rid}"><span class="grow"><div class="t" data-noi18n>${esc(r.type==="lyrics"?(r.songTitle||"")+" · "+(r.setName||""):(r.setName||r.data?.name||""))}</div><div class="s"><span data-noi18n>${esc(r.byName||r.by)}</span> · ${r.type==="lyrics"?tr("дууны үг засах"):r.isNew?tr("шинэ жагсаалт"):tr("засвар")} · <span data-noi18n>${fmtTime(r.createdAt)}</span></div></span><span class="rqst pending">Хянах ›</span></button>`).join("")}</div></div>`;
   }
-  if(canPropose()&&myReqs.size){
+  if((canPropose()||lyricsByRequest())&&myReqs.size){
     const wk=Date.now()-7*864e5;
     const L=[...myReqs.values()].filter(r=>r.status==="pending"||(r.decidedAt||r.createdAt||0)>wk).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,5);
     const lbl={pending:"Хүлээгдэж байна",approved:"Зөвшөөрсөн ✓",rejected:"Татгалзсан"};
-    if(L.length) h+=`<div style="margin:0 0 14px"><div class="cp-lbl" style="margin:0 4px 6px">Таны илгээсэн хүсэлтүүд</div><div class="list" style="margin:0">${L.map(r=>`<div class="item" style="cursor:default"><span class="grow"><div class="t" data-noi18n>${esc(r.setName||"")}</div><div class="s" data-noi18n>${fmtTime(r.createdAt)}</div></span><span class="rqst ${r.status}">${lbl[r.status]||r.status}</span></div>`).join("")}</div></div>`;
+    if(L.length) h+=`<div style="margin:0 0 14px"><div class="cp-lbl" style="margin:0 4px 6px">Таны илгээсэн хүсэлтүүд</div><div class="list" style="margin:0">${L.map(r=>`<div class="item" style="cursor:default"><span class="grow"><div class="t" data-noi18n>${esc(r.type==="lyrics"?(r.songTitle||"")+" · "+(r.setName||""):(r.setName||""))}</div><div class="s" data-noi18n>${fmtTime(r.createdAt)}</div></span><span class="rqst ${r.status}">${lbl[r.status]||r.status}</span></div>`).join("")}</div></div>`;
   }
   return h;
+}
+async function sendLyricsRequest(ctx,ov){
+  const st=state.sets.get(ctx.setId), it=st&&st.items[ctx.idx]; const so=it&&songOf(it);
+  try{
+    await fdb.collection("requests").doc(newId()).set({type:"lyrics",setId:ctx.setId,idx:ctx.idx,songId:ctx.songId,ov,prev:ctx.base,setName:st?.name||"",songTitle:so?.title||"",
+      by:myEmail(),byName:me.displayName||me.email,createdAt:Date.now(),status:"pending"});
+    toast(tr("Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө"));
+  }catch(e){toast(tr("Илгээж чадсангүй — дахин оролдоно уу"))}
+}
+function lineDiffHtml(a,b){
+  const A=plainOf(a||"").split("\n"), B=plainOf(b||"").split("\n"); const out=[]; const n=Math.max(A.length,B.length);
+  for(let i=0;i<n;i++){ const x=A[i]??"", y=B[i]??""; if(x===y){ if(x.trim()) out.push(`<div style="color:var(--muted)" data-noi18n>${esc(x)}</div>`) } else { if(x.trim()) out.push(`<div class="dfr" data-noi18n>− ${esc(x)}</div>`); if(y.trim()) out.push(`<div class="dfa" data-noi18n>＋ ${esc(y)}</div>`) } }
+  return out.join("")||`<div style="color:var(--muted)">${tr("Зөвхөн аккорд өөрчлөгдсөн")}</div>`;
+}
+function openLyricsReview(rid){
+  const r=pendReqs.get(rid); if(!r||!isOwner) return;
+  const st=serverSets.get(r.setId); let idx=-1;
+  if(st){ if(st.items?.[r.idx]?.songId===r.songId) idx=r.idx; else idx=(st.items||[]).findIndex(it=>it.songId===r.songId) }
+  const cur=idx>=0?songOf(st.items[idx]):null;
+  const keyCh=(r.prev?.key||"")!==(r.ov?.key||"");
+  openModal(`<h2 data-noi18n>${esc(r.songTitle||"")}</h2>
+    <div class="help" style="margin-top:0">${tr("Дууны үг засах хүсэлт")} · <span data-noi18n>${esc(r.setName||"")}</span><br><span data-noi18n>${esc(r.byName||r.by)}</span> · <span data-noi18n>${fmtTime(r.createdAt)}</span></div>
+    ${idx<0?`<div class="offline" style="display:block">⚠ ${tr("Энэ дуу жагсаалтаас хасагдсан байна.")}</div>`:""}
+    ${keyCh?`<div style="margin:8px 0">${tr("ая")}: <span class="dfr" data-noi18n>${esc(r.prev?.key||"—")}</span> → <span class="dfa" data-noi18n>${esc(r.ov?.key||"—")}</span></div>`:""}
+    <div style="max-height:44vh;overflow:auto;margin:8px 0;line-height:1.5">${lineDiffHtml(r.prev?.body,r.ov?.body)}</div>
+    <details style="margin:6px 0"><summary style="cursor:pointer;color:var(--accent)">${tr("Аккордтой нь харах")}</summary><div class="song" style="--fs:15px;margin-top:8px" data-noi18n>${renderSong(r.ov?.body||"",0,null)}</div></details>
+    <div class="row" style="margin-top:12px"><button class="btn danger" id="rv-no">Татгалзах</button><span style="flex:1"></span><button class="btn" data-mclose>Хаах</button><button class="btn primary" id="rv-ok" ${idx<0?"disabled":""}>Зөвшөөрөх</button></div>`);
+  const decide=async ok=>{
+    closeModal();
+    try{
+      if(ok&&idx>=0){ const s2=structuredClone(serverSets.get(r.setId)); pushUndo((r.songTitle||"Дуу")+" → "+(s2.name||""),[{col:"sets",id:r.setId,data:structuredClone(serverSets.get(r.setId))}]);
+        s2.items[idx].ov={key:r.ov?.key||"",body:r.ov?.body||""}; await save("sets",r.setId,s2); }
+      await fdb.collection("requests").doc(rid).update({status:ok?"approved":"rejected",decidedAt:Date.now()});
+      toast(ok?tr("Зөвшөөрлөө — дууны үг шинэчлэгдлээ"):"Татгалзлаа");
+    }catch(e){handleWriteErr(e)}
+  };
+  document.getElementById("rv-ok").onclick=()=>decide(true);
+  document.getElementById("rv-no").onclick=()=>decide(false);
 }
 async function sendDrafts(){
   const ids=Object.keys(drafts); if(!ids.length||!me) return;
@@ -2139,6 +2189,7 @@ function diffHtml(cur,prop,isNew){
 }
 function openReview(rid){
   const r=pendReqs.get(rid); if(!r||!isOwner) return;
+  if(r.type==="lyrics") return openLyricsReview(rid);
   const cur=serverSets.get(r.setId), prop=r.data||{};
   const conflict=cur&&!r.isNew&&(cur.updatedAt||0)!==(r.baseUpdatedAt||0);
   const gone=!cur&&!r.isNew;
@@ -2266,7 +2317,7 @@ document.getElementById("teamlist").addEventListener("click",async e=>{
 const I18N={
 "Магтаалын":"Worship","баг":"Team","Магтаалын баг":"Worship Team",
 "Дуунууд":"Songs","Жагсаалт":"Setlists","Баг":"Team",
-"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","☑ Сонгох":"☑ Select","сонгосон":"selected","Бүгдийг сонгох":"Select all","Сонголтыг арилгах":"Clear selection","Арилгах":"Clear","Энэ багцыг зөвхөн үүсгэсэн хүн засна":"Only the person who created this group can change it","Багцын нэр":"Group name","Ийм нэртэй багц аль хэдийн байна":"A group with this name already exists","Нэр солигдлоо":"Renamed","Багцыг устгах":"Delete group","багцыг устгах уу?":"— delete this group?","дуу энэ багцаас гарна. Дуунууд өөрсдөө устахгүй. «↶ Буцаах»-аар сэргээж болно.":"songs will leave this group. The songs themselves are not deleted. You can restore with «↶ Undo».","багц устгагдлаа":"group deleted","Үг, аккорд, ая":"Lyrics, chords and key","нь зөвхөн энэ жагсаалтад өөрчлөгдөнө.":"change only in this setlist.","Нэр, зохиогч, BPM, холбоос":"Title, author, BPM and link","нь дууны санд засагдаж, бүх жагсаалтад шууд харагдана.":"are saved to the library and show in every setlist.","Зөвхөн энэ дуу":"This song only","Зөвхөн энэ дууг харах":"Show this song only","Багцын бүх дууг нэмэх":"Add every song in the group","дуу нэмлээ":"songs added","🏷 Багц":"🏷 Group","дууг багцад нэмэх":"songs — add to a group","Шинэ багцын нэр":"New group name","Жишээ: Христийн мэндэлсний баяр":"e.g. Christmas","Байгаа багцад нэмэх":"Add to an existing group","Сонгосон дуунуудыг багцаас хасах":"Remove the selected songs from a group","Багцын нэр бичнэ үү":"Enter a group name","дууг багцад нэмлээ":"songs added to group","дууг багцаас хаслаа":"songs removed from group","＋ Жагсаалт":"＋ Setlist","дууг аль жагсаалтад нэмэх вэ?":"songs — add to which setlist?","дуу жагсаалтад нэмлээ":"songs added to the setlist","🗑 Устгах":"🗑 Delete","дууг устгах уу?":"songs — delete?","дуу жагсаалтад ашиглагдаж байгаа тул тэндээс алга болно.":"of them are used in setlists and will disappear there.","«↶ Буцаах»-аар сэргээж болно.":"You can restore with «↶ Undo».","дуу устгалаа":"songs deleted","Зарим дууг устгаж чадсангүй":"Some songs couldn't be deleted","Зураг, PDF-ээс таниулж оруулах":"Import from a photo or PDF","PDF-ийг уншиж байна…":"Reading the PDF…","PDF файлыг нээж чадсангүй. Хуудсыг зураг (скриншот) болгоод оруулна уу.":"Couldn't open the PDF. Take a screenshot of the page and add that instead.","PDF-д хуудас олдсонгүй":"No pages found in the PDF","Ижил хэсгүүдэд мөн засагдлаа":"Also updated in matching sections","📷 Зурагнаас таниулах":"📷 Recognize from a photo","Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.":"The photo is read with your Claude account — no extra cost or key.","Claude дээр нээх ↗":"Open in Claude ↗","Өөрийн API түлхүүрээр":"Use my own API key","📋 Апп руу хуулах":"📋 Copy to the app","Хуулсан — апп дээр «📋 Хуулж оруулах»-д буулгана уу":"Copied — paste it in the app under «📋 Paste import»","Үг шинэчлэгдлээ":"Lyrics updated","⟳ Сангаас үг шинэчлэх (":"⟳ Update lyrics from library (","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
+"Жагсаалтыг харахын тулд нэвтэрнэ үү.":"Sign in to see the setlists.","Хүсэлт илгээх":"Send request","☑ Сонгох":"☑ Select","сонгосон":"selected","Бүгдийг сонгох":"Select all","Сонголтыг арилгах":"Clear selection","Арилгах":"Clear","Таны засвар хүсэлт болж эзэмшигчид очно.":"Your edit will be sent to the owner as a request.","Эзэмшигч зөвшөөрсний дараа жагсаалтад өөрчлөгдөнө.":"It changes in the setlist once the owner approves.","Хаахад хүсэлт илгээгдэнэ":"Request will be sent when you close","Дууны үг засах хүсэлт":"Lyrics edit request","дууны үг засах":"lyrics edit","Энэ дуу жагсаалтаас хасагдсан байна.":"This song has been removed from the setlist.","Аккордтой нь харах":"Show with chords","Зөвшөөрлөө — дууны үг шинэчлэгдлээ":"Approved — lyrics updated","Зөвхөн аккорд өөрчлөгдсөн":"Only chords changed","Энэ багцыг зөвхөн үүсгэсэн хүн засна":"Only the person who created this group can change it","Багцын нэр":"Group name","Ийм нэртэй багц аль хэдийн байна":"A group with this name already exists","Нэр солигдлоо":"Renamed","Багцыг устгах":"Delete group","багцыг устгах уу?":"— delete this group?","дуу энэ багцаас гарна. Дуунууд өөрсдөө устахгүй. «↶ Буцаах»-аар сэргээж болно.":"songs will leave this group. The songs themselves are not deleted. You can restore with «↶ Undo».","багц устгагдлаа":"group deleted","Үг, аккорд, ая":"Lyrics, chords and key","нь зөвхөн энэ жагсаалтад өөрчлөгдөнө.":"change only in this setlist.","Нэр, зохиогч, BPM, холбоос":"Title, author, BPM and link","нь дууны санд засагдаж, бүх жагсаалтад шууд харагдана.":"are saved to the library and show in every setlist.","Зөвхөн энэ дуу":"This song only","Зөвхөн энэ дууг харах":"Show this song only","Багцын бүх дууг нэмэх":"Add every song in the group","дуу нэмлээ":"songs added","🏷 Багц":"🏷 Group","дууг багцад нэмэх":"songs — add to a group","Шинэ багцын нэр":"New group name","Жишээ: Христийн мэндэлсний баяр":"e.g. Christmas","Байгаа багцад нэмэх":"Add to an existing group","Сонгосон дуунуудыг багцаас хасах":"Remove the selected songs from a group","Багцын нэр бичнэ үү":"Enter a group name","дууг багцад нэмлээ":"songs added to group","дууг багцаас хаслаа":"songs removed from group","＋ Жагсаалт":"＋ Setlist","дууг аль жагсаалтад нэмэх вэ?":"songs — add to which setlist?","дуу жагсаалтад нэмлээ":"songs added to the setlist","🗑 Устгах":"🗑 Delete","дууг устгах уу?":"songs — delete?","дуу жагсаалтад ашиглагдаж байгаа тул тэндээс алга болно.":"of them are used in setlists and will disappear there.","«↶ Буцаах»-аар сэргээж болно.":"You can restore with «↶ Undo».","дуу устгалаа":"songs deleted","Зарим дууг устгаж чадсангүй":"Some songs couldn't be deleted","Зураг, PDF-ээс таниулж оруулах":"Import from a photo or PDF","PDF-ийг уншиж байна…":"Reading the PDF…","PDF файлыг нээж чадсангүй. Хуудсыг зураг (скриншот) болгоод оруулна уу.":"Couldn't open the PDF. Take a screenshot of the page and add that instead.","PDF-д хуудас олдсонгүй":"No pages found in the PDF","Ижил хэсгүүдэд мөн засагдлаа":"Also updated in matching sections","📷 Зурагнаас таниулах":"📷 Recognize from a photo","Зургийг таны Claude бүртгэлээр таниулна — нэмэлт төлбөр, түлхүүр хэрэггүй.":"The photo is read with your Claude account — no extra cost or key.","Claude дээр нээх ↗":"Open in Claude ↗","Өөрийн API түлхүүрээр":"Use my own API key","📋 Апп руу хуулах":"📋 Copy to the app","Хуулсан — апп дээр «📋 Хуулж оруулах»-д буулгана уу":"Copied — paste it in the app under «📋 Paste import»","Үг шинэчлэгдлээ":"Lyrics updated","⟳ Сангаас үг шинэчлэх (":"⟳ Update lyrics from library (","Жагсаалтын хувилбарууд шинэчлэгдлээ":"Setlist versions updated","Байрлал (аль дуунуудын хооронд)":"Position (between which songs)","⇄ — тэнд байгаа шилжилттэй байраа солино":"⇄ — swaps with the transition already there","▶ Автомат гүйлгэх":"▶ Auto-scroll","⏸ Зогсоох":"⏸ Pause","хурд":"speed","Жагсаалтын төгсгөл":"End of setlist","Шилжилт":"Transition","＋ Шилжилт (аккорд, өгүүлбэр)":"＋ Transition (chords, text)","Өгүүлбэр / тайлбар":"Text / note","Цуцлах":"Cancel","жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.":"setlist(s) edited. Send it and the owner will review it.","📨 Засварын хүсэлт (":"📨 Edit requests (","шинэ жагсаалт":"new setlist","засвар":"edit","Хянах ›":"Review ›","Таны илгээсэн хүсэлтүүд":"Your requests","Хүлээгдэж байна":"Pending","Зөвшөөрсөн ✓":"Approved ✓","Татгалзсан":"Declined","Татгалзах":"Decline","Зөвшөөрөх":"Approve","✎ Ноорог":"✎ Draft","Шинэ жагсаалт үүсгэх хүсэлт":"Request to create a new setlist","Нэр":"Name","Огноо":"Date","шинэ":"new","ая":"key","тэмдэглэл":"note","шилжилт":"transition","дууны хувилбар":"song version","дараалал өөрчлөгдсөн":"order changed","Хасагдсан":"Removed","Багийн бүрэлдэхүүн өөрчлөгдсөн":"Team changed","Тэмдэглэл":"Notes","Хүсэлт илгээснээс хойш жагсаалт өөрчлөгдсөн. Зөвшөөрвөл тэр өөрчлөлтийг дарж бичнэ.":"The setlist changed after this request was sent. Approving will overwrite those changes.","Энэ жагсаалт устгагдсан байна. Зөвшөөрвөл дахин үүснэ.":"This setlist was deleted. Approving will recreate it.","Засвараа цуцлах уу?":"Discard your edits?","Илгээгээгүй өөрчлөлтүүд устна.":"Unsent changes will be lost.","Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө":"Request sent — the owner will review it","Илгээж чадсангүй — дахин оролдоно уу":"Couldn't send — please try again","Зөвшөөрлөө — жагсаалт шинэчлэгдлээ":"Approved — setlist updated","Татгалзлаа":"Declined","Жагсаалт устгахыг зөвхөн эзэмшигч хийнэ":"Only the owner can delete setlists","Жагсаалтад хийсэн засвар тань хүсэлт болж эзэмшигчид очно.":"Your setlist edits will be sent to the owner as requests.","🔗 Холбоос нээх":"🔗 Open link","🔗 Холбоос — YouTube, Spotify, эх сурвалж (заавал биш)":"🔗 Link — YouTube, Spotify, source (optional)","🎵 Аудио бичлэг (заавал биш)":"🎵 Audio recording (optional)","▶ Сонсох":"▶ Play","Солих":"Replace","Устгах":"Delete","⬆ Аудио файл оруулах":"⬆ Upload audio file","mp3, m4a гэх мэт · 15 MB хүртэл. Утсаар бичсэн бэлтгэлийн бичлэг ч болно.":"mp3, m4a, etc. · up to 15 MB. A rehearsal recording from your phone works too.","Бичлэг сонсох":"Play recording","Бичлэгийг ачаалж чадсангүй":"Couldn't load the recording","Аудио оруулж байна…":"Uploading audio…","Бичлэгийг устгах уу?":"Delete the recording?","Устгалаа":"Deleted","Бичлэг нэмэгдлээ":"Recording added","Файл хэт том байна (15 MB хүртэл)":"File too large (max 15 MB)","Эхлээд дууны нэрээ бичнэ үү":"Enter the song title first","Дууг хадгалж чадсангүй":"Couldn't save the song","Оруулж чадсангүй — интернэтээ шалгаад дахин оролдоно уу":"Upload failed — check your connection and try again","Ачаалж байна…":"Loading…","Энэ төхөөрөмж дээр":"On this device","Алдаа":"Error",
 "Холбогдож байна…":"Connecting…","Удаан байна…":"Taking a while…","Багтай хуваалцсан ✓":"Shared with team ✓","Хандах эрх алга":"No access",
 "Хуваалцсан сан руу холбогдсонгүй — өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана.":"Couldn't connect to the shared database — data is saved on this device only.",
 "Firebase тохируулаагүй байна — одоогоор өгөгдөл зөвхөн энэ төхөөрөмж дээр хадгалагдана. (index.html доторх ТОХИРГОО хэсгийг бөглөнө үү)":"Firebase is not set up — data is saved on this device only for now. (Fill in the ТОХИРГОО / settings section in index.html)",

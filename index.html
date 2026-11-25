@@ -2094,6 +2094,12 @@ function renderReqBadge(){
   else if(b) b.remove();
   try{ if(navigator.setAppBadge){ n?navigator.setAppBadge(n):navigator.clearAppBadge() } }catch(e){}
 }
+/* Зөвшөөрсөн/татгалзсан хүсэлтийн бичиг анх харагдсанаас хойш 10 секундын дараа алга болно */
+const SEEN_LS="magtaal-req-seen-v1"; let reqSeen={}; try{reqSeen=JSON.parse(localStorage.getItem(SEEN_LS)||"{}")}catch(e){}
+function decidedVisible(rid){
+  const now=Date.now(); if(!reqSeen[rid]){ reqSeen[rid]=now; try{localStorage.setItem(SEEN_LS,JSON.stringify(reqSeen))}catch(e){} setTimeout(()=>renderAll(),10100) }
+  return now-reqSeen[rid]<10000;
+}
 function reqHeadHtml(){
   let h="";
   if(isOwner&&pendReqs.size){
@@ -2102,7 +2108,7 @@ function reqHeadHtml(){
   }
   if((canPropose()||lyricsByRequest())&&myReqs.size){
     const wk=Date.now()-7*864e5;
-    const L=[...myReqs.values()].filter(r=>r.status==="pending"||(r.decidedAt||r.createdAt||0)>wk).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,5);
+    const L=[...myReqs.entries()].filter(([rid,r])=>r.status==="pending"||((r.decidedAt||r.createdAt||0)>wk&&decidedVisible(rid))).map(([,r])=>r).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,5);
     const lbl={pending:"Хүлээгдэж байна",approved:"Зөвшөөрсөн ✓",rejected:"Татгалзсан"};
     if(L.length) h+=`<div style="margin:0 0 14px"><div class="cp-lbl" style="margin:0 4px 6px">Таны илгээсэн хүсэлтүүд</div><div class="list" style="margin:0">${L.map(r=>`<div class="item" style="cursor:default"><span class="grow"><div class="t" data-noi18n>${esc(r.type==="lyrics"?(r.songTitle||"")+" · "+(r.setName||""):(r.setName||""))}</div><div class="s" data-noi18n>${fmtTime(r.createdAt)}</div></span><span class="rqst ${r.status}">${lbl[r.status]||r.status}</span></div>`).join("")}</div></div>`;
   }

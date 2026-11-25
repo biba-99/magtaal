@@ -159,6 +159,7 @@ h3.sub{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing
 .lead .ld-item{padding-bottom:30px;margin-bottom:28px;border-bottom:7px double #e48a5c}
 .lead .ld-item:last-of-type{border-bottom:0}
 .lead .ld-h{background:#b4532a;border:2px solid #e48a5c;border-radius:12px;padding:12px 14px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.lead .ld-bpm{flex:none;font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:3px 10px;white-space:nowrap}
 .lead .ld-h{display:flex;align-items:center;gap:10px;margin:4px 0 14px}
 .lead .ld-n{width:34px;height:34px;border-radius:50%;background:#fff;color:#b4532a;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
 .lead .ld-t{font-size:23px;font-weight:800;flex:1;min-width:0;color:#fff;letter-spacing:-.01em;line-height:1.2}
@@ -1793,7 +1794,7 @@ function renderLead(){
     const {steps,flat}=leadSteps(it,song);
     const key=it.key||song.key||"";
     return `<section class="ld-item" data-i="${i}">
-      <div class="ld-h"><span class="ld-n">${i+1}</span><span class="ld-t">${esc(song.title)}</span>${key?`<span class="keybadge">${esc(key)}</span>`:""}</div>
+      <div class="ld-h"><span class="ld-n">${i+1}</span><span class="ld-t">${esc(song.title)}</span>${key?`<span class="keybadge">${esc(key)}</span>`:""}${song.bpm?`<span class="ld-bpm">♩ ${esc(song.bpm)} BPM</span>`:""}</div>
       ${it.note?`<div class="note">📝 ${esc(it.note)}</div>`:""}
       <div class="song${lead.chords?"":" nochords"}" style="--fs:${lead.fs}px">${renderSong(song.body,steps,steps?flat:null)}</div>
       ${lead.only==null&&i<items.length-1&&(((it.trans||[]).length&&lead.chords)||it.transText)?`<div class="ld-trans" style="font-size:${Math.round(lead.fs*.9)}px"><span class="tl">↪ Шилжилт</span>${lead.chords?(it.trans||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join(""):""}<span class="tl">→ ${esc(songOf(items[i+1])?.title||"")}</span>${it.transText?`<span class="tt" data-noi18n>${esc(it.transText)}</span>`:""}</div>`:""}

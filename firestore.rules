@@ -19,6 +19,13 @@ service cloud.firestore {
     // Багийн гишүүд (утасны дугаар): засах эрхтэй хүмүүс үзнэ, зөвхөн эзэмшигч нэмж/засна
     match /members/{id} { allow read: if isEditor(); allow write: if isOwner(); }
 
+    // Дууны багц: хэн ч үзнэ; засах эрхтэй хүн өөрийн нэрээр үүсгэнэ, зөвхөн өөрийнхөө үүсгэснийг засна/устгана; эзэмшигч бүгдийг
+    match /groups/{id} {
+      allow read: if true;
+      allow create: if isEditor() && request.resource.data.by == request.auth.token.email.lower();
+      allow update: if isOwner() || (isEditor() && resource.data.by == request.auth.token.email.lower() && request.resource.data.by == resource.data.by);
+      allow delete: if isOwner() || (isEditor() && resource.data.by == request.auth.token.email.lower());
+    }
     // Засах эрхтэй хүмүүсийн жагсаалт: зөвхөн эзэмшигч өөрчилнө
     match /editors/{email} {
       allow get: if signedIn() && (request.auth.token.email.lower() == email || isOwner());

@@ -1337,10 +1337,14 @@ function openChordPicker(li,pos){
         if(np!==sel){applyChord(li,sel,"");applyChord(li,np,cur);sel=np;draw()}
       }
     };
-    document.getElementById("cp-in").onkeydown=e=>{if(e.key==="Enter")document.getElementById("cp-ok").click()};
+    enterOk(document.getElementById("cp-in"),"cp-ok");
   };
   draw();
 }
+/* Аккорд бичээд Enter (утасны «return / done») дарахад баталгаажна */
+function enterOk(inp,btnId){ if(!inp) return; inp.setAttribute("enterkeyhint","done"); let fired=false;
+  const go=e=>{ if((e.key==="Enter"||e.keyCode===13)&&!e.isComposing){ e.preventDefault(); if(fired) return; fired=true; setTimeout(()=>fired=false,300); document.getElementById(btnId)?.click() } };
+  inp.addEventListener("keydown",go); inp.addEventListener("keyup",go); }
 function applyChord(li,pos,chord){
   const L=bodyLines(); const p=parseLine(L[li]);
   p.ch=p.ch.filter(o=>o.pos!==pos);
@@ -1411,7 +1415,7 @@ function openTransPicker(i){
       <select class="in" id="tr-pos" data-noi18n>${items.slice(0,-1).map((x,k)=>`<option value="${k}" ${k===pos?"selected":""}>${k+1}. ${esc(songOf(x)?.title||"?")} → ${k+2}. ${esc(songOf(items[k+1])?.title||"?")}${k!==i&&hasT(x)?" ⇄":""}</option>`).join("")}</select>
       <div class="help" style="margin:4px 0 0">⇄ — тэнд байгаа шилжилттэй байраа солино</div>`:""}
       <div class="row" style="margin-top:14px">${((it.trans||[]).length||it.transText)?'<button class="btn small danger" id="tr-clear">Устгах</button>':""}<span style="flex:1"></span><button class="btn small" data-mclose>Болих</button><button class="btn primary" id="tr-ok">Хадгалах</button></div>`);
-    document.getElementById("tr-in").onkeydown=e=>{if(e.key==="Enter")document.getElementById("tr-add").click()};
+    enterOk(document.getElementById("tr-in"),"tr-add");
   };
   draw();
   document.getElementById("modalBox").onclick=e=>{
@@ -1540,7 +1544,7 @@ function openInsertPicker(idx,where){
       setBodyLines(L); closeModal(); renderVE(); scheduleAutosave();
       const el=document.querySelector(`#ve .ve-more[data-l="${lineIdx}"]`); if(el){el.scrollIntoView({block:"center"});el.classList.add("pulse");setTimeout(()=>el.classList.remove("pulse"),1600)}
     };
-    document.getElementById("cp-in").onkeydown=e=>{if(e.key==="Enter")document.getElementById("cp-ok").click()};
+    enterOk(document.getElementById("cp-in"),"cp-ok");
   };
   draw();
 }

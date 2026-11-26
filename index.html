@@ -267,6 +267,11 @@ body.has-draft .sheet .body{padding-bottom:160px}
 .audiobox audio{width:100%;max-width:520px}
 .offline{background:#fff4d6;color:#7a5a00;border-radius:10px;padding:8px 12px;font-size:13px;margin-bottom:10px;display:none}
 @media (prefers-color-scheme: dark){.offline{background:#3a3010;color:#f0d68a}}
+/* Дарах үеийн тод харагдах байдал */
+button,a,.item,.chip,.song,.tm-card,.sl-trans,.ld-item,[onclick],[role=button]{-webkit-tap-highlight-color:transparent;transition:transform .09s ease,box-shadow .09s ease,filter .09s ease}
+.pressed{transform:scale(.96)!important;box-shadow:inset 0 0 0 100vmax rgba(180,83,42,.2)!important;filter:brightness(.93)}
+@media (prefers-color-scheme: dark){.pressed{box-shadow:inset 0 0 0 100vmax rgba(228,138,92,.28)!important;filter:brightness(1.2)}}
+.pressed.item,.pressed.song,.pressed.tm-card,.pressed.ld-item{transform:scale(.985)!important}
 </style>
 </head>
 <body>
@@ -2653,6 +2658,24 @@ document.getElementById("pi-open").onclick=openPasteImport;
 document.getElementById("undoBtn").onclick=doUndo;
 init();
 initSample();
+</script>
+<script>
+(function(){
+  const SEL='button,a[href],[onclick],[role=button],label,summary,.item,.chip,.song,.tm-card,.sl-trans,.ld-item,.sl-top.open,.ve-c,.ve-ins,.ve-below';
+  let el=null,x=0,y=0,t0=0,tm=null;
+  function off(){ const e=el; el=null; if(!e) return; const w=Math.max(0,140-(Date.now()-t0)); clearTimeout(tm); tm=setTimeout(()=>e.classList.remove("pressed"),w) }
+  document.addEventListener("pointerdown",ev=>{
+    if(ev.button>0) return;
+    const t=ev.target.closest&&ev.target.closest(SEL);
+    if(!t||t.disabled||t.matches("input,textarea,select")) return;
+    if(el&&el!==t) el.classList.remove("pressed");
+    clearTimeout(tm); el=t; x=ev.clientX; y=ev.clientY; t0=Date.now(); t.classList.add("pressed");
+  },{passive:true,capture:true});
+  document.addEventListener("pointermove",ev=>{ if(el&&(Math.abs(ev.clientX-x)>10||Math.abs(ev.clientY-y)>10)){ el.classList.remove("pressed"); el=null } },{passive:true,capture:true});
+  ["pointerup","pointercancel"].forEach(n=>document.addEventListener(n,off,{passive:true,capture:true}));
+  window.addEventListener("scroll",()=>{ if(el){el.classList.remove("pressed");el=null} },{passive:true,capture:true});
+  document.addEventListener("touchstart",()=>{},{passive:true});
+})();
 </script>
 </body>
 </html>

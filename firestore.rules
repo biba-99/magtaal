@@ -35,6 +35,8 @@ service cloud.firestore {
         && (request.resource.data.by == '' || (signedIn() && request.resource.data.by == request.auth.token.email.lower()));
       allow read, update, delete: if isOwner();
     }
+    // Утасны мэдэгдлийн (ntfy) сэдэв: нэвтэрсэн хүн уншина, зөвхөн эзэмшигч өөрчилнө
+    match /meta/notify { allow read: if signedIn(); allow write: if isOwner(); }
     // Засах эрхтэй хүмүүсийн жагсаалт: зөвхөн эзэмшигч өөрчилнө
     match /editors/{email} {
       allow get: if signedIn() && (request.auth.token.email.lower() == email || isOwner());

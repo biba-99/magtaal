@@ -302,6 +302,7 @@ button,a,.item,.chip,.song,.tm-card,.sl-trans,.ld-item,[onclick],[role=button]{-
   <!-- TEAM -->
   <section class="view" id="v-team">
     <div class="list" id="teamlist"></div>
+    <div id="ntfybox"></div>
     <div id="fbbox"></div>
   </section>
 </div>
@@ -590,8 +591,9 @@ async function save(col,id,data){
   data.updatedAt=Date.now();
   if(!data.createdAt) data.createdAt=createdOf(id,state[col].get(id))||Date.now();
   if(me) data.updatedBy=me.email;
+  const nLine=ntfyLine(col,id,data,false);
   state[col].set(id,data); renderAll();
-  if(mode==="db"){ try{await fdb.collection(col).doc(id).set(data)}catch(e){handleWriteErr(e)} }
+  if(mode==="db"){ try{await fdb.collection(col).doc(id).set(data); notifyOwner(nLine)}catch(e){handleWriteErr(e)} }
   else lsSave();
 }
 async function remove(col,id,noUndo){
@@ -602,7 +604,7 @@ async function remove(col,id,noUndo){
   }
   if(!canWrite){toast("Засахын тулд нэвтэрнэ үү");return}
   state[col].delete(id); renderAll();
-  if(mode==="db"){ try{await fdb.collection(col).doc(id).delete()}catch(e){handleWriteErr(e)} }
+  if(mode==="db"){ try{await fdb.collection(col).doc(id).delete(); notifyOwner(ntfyLine(col,id,prev,true))}catch(e){handleWriteErr(e)} }
   else lsSave();
 }
 /* ---- Undo (сэргээх) ---- */
@@ -741,7 +743,7 @@ function createdOf(id,d){if(d&&d.createdAt)return d.createdAt;const t=parseInt(S
 function songsSorted(){return [...state.songs.entries()].sort((a,b)=>createdOf(b[0],b[1])-createdOf(a[0],a[1])||(a[1].title||"").localeCompare(b[1].title||"","mn"))}
 
 function renderAll(){
-  renderSongs(); renderSets(); renderTeam(); renderFeedback();
+  renderSongs(); renderSets(); renderTeam(); renderFeedback(); renderNtfy();
   if(document.getElementById("songSheet").classList.contains("on")) renderSongView();
   if(document.getElementById("setSheet").classList.contains("on")) renderSetDetail(false);
   if(document.getElementById("lead").classList.contains("on")) renderLead();
@@ -2146,6 +2148,62 @@ function renderDraftBar(){
   document.body.classList.toggle("has-draft",on);
   if(on) document.getElementById("db-t").innerHTML=`✎ <b data-noi18n>${n}</b> ${tr("жагсаалтад засвар хийсэн. Илгээвэл эзэмшигч хянаж зөвшөөрнө.")}`;
 }
+/* ---------------- Утасны мэдэгдэл (ntfy) ---------------- */
+let ntfyTopic=null, ntfyLoaded=false, ntfyQ=[], ntfyT=null;
+async function loadNtfy(force){
+  if(mode!=="db"||!me){ntfyTopic=null;return null}
+  if(ntfyLoaded&&!force) return ntfyTopic;
+  try{ const d=await fdb.collection("meta").doc("notify").get(); ntfyTopic=d.exists&&d.data().on!==false?(d.data().topic||null):null }catch(e){ntfyTopic=null}
+  ntfyLoaded=true; return ntfyTopic;
+}
+function ntfyWho(){return (me&&(me.displayName||me.email))||"Хэн нэгэн"}
+async function ntfySend(title,message,topicOverride){
+  const topic=topicOverride||await loadNtfy(); if(!topic) return false;
+  try{ await fetch("https://ntfy.sh/",{method:"POST",keepalive:true,body:JSON.stringify({topic,title:String(title).slice(0,200),message:String(message).slice(0,1500),tags:["musical_note"],click:location.href.split("#")[0]})}); return true }catch(e){return false}
+}
+/* Эзэмшигч биш хүний засварыг цуглуулж, 15 секунд нам гүм болмогц нэг мэдэгдэл болгон илгээнэ */
+function notifyOwner(line,now){
+  if(mode!=="db"||!me||isOwner) return;
+  if(now){ ntfySend(ntfyWho()+" — Магтаалын баг",line); return }
+  if(!ntfyQ.includes(line)) ntfyQ.push(line);
+  clearTimeout(ntfyT); ntfyT=setTimeout(ntfyFlush,15000);
+}
+function ntfyFlush(){ clearTimeout(ntfyT); if(!ntfyQ.length) return; const L=ntfyQ.splice(0); ntfySend(ntfyWho()+" апп дээр засвар хийлээ",L.slice(0,12).join("\n")+(L.length>12?`\n… +${L.length-12}`:"")) }
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") ntfyFlush() });
+window.addEventListener("pagehide",ntfyFlush);
+function ntfyLine(col,id,data,del){
+  const nm=(data&&(data.title||data.name))||"";
+  const K={songs:["🎵 Дуу","дуу"],sets:["📋 Жагсаалт","жагсаалт"],groups:["🗂 Багц","багц"],members:["👥 Гишүүн","гишүүн"]}[col]||["•",col];
+  return `${K[0]} «${nm}» ${del?"устгалаа":(state[col]&&state[col].has(id)&&!data.__new?"засварлалаа":"нэмлээ")}`;
+}
+function renderNtfy(){
+  const box=document.getElementById("ntfybox"); if(!box) return;
+  if(!isOwner||mode!=="db"){box.innerHTML="";return}
+  if(!ntfyLoaded){ loadNtfy().then(renderNtfy); box.innerHTML=""; return }
+  const t=ntfyTopic;
+  box.innerHTML=`<h3 class="sub">📲 ${tr("Утасны мэдэгдэл")}</h3><div class="tm-card" style="margin-top:0">
+    ${t?`<div class="help" style="margin:0 0 8px">${tr("Засах эрхтэй хүмүүс засвар хийх, хүсэлт эсвэл санал илгээхэд таны утсанд мэдэгдэл ирнэ — апп хаалттай, утас түгжээтэй байсан ч.")}</div>
+      <ol style="margin:0 0 10px;padding-left:20px;line-height:1.6;font-size:14px">
+        <li>${tr("Утсандаа")} <b>ntfy</b> ${tr("апп суулгана")} (<a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener">iPhone/iPad</a> · <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener">Android</a>)</li>
+        <li>${tr("Аппаа нээгээд «+» дарж, доорх сэдвийн нэрийг хуулж оруулна")}</li>
+        <li>${tr("Мэдэгдэл зөвшөөрөх эсэхийг асуухад «Allow» дарна")}</li></ol>
+      <div class="row"><input class="in" id="nt-topic" readonly value="${esc(t)}" style="flex:1;font-family:'JetBrains Mono',monospace;font-size:13px" data-noi18n><button class="btn small" id="nt-copy">📋 ${tr("Хуулах")}</button></div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px"><button class="btn small primary" id="nt-test">🔔 ${tr("Туршилтын мэдэгдэл")}</button><button class="btn small" id="nt-new">🔄 ${tr("Шинэ сэдэв")}</button><button class="btn small danger" id="nt-off">${tr("Унтраах")}</button></div>
+      <div class="help" style="margin:8px 0 0">${tr("Сэдвийн нэрийг бусдад бүү өгөөрэй — мэдсэн хүн бүр мэдэгдлийг уншиж чадна.")}</div>`
+    :`<div class="help" style="margin:0 0 8px">${tr("Засах эрхтэй хүмүүс засвар хийхэд таны утсанд шууд мэдэгдэл ирэх тохиргоо. Үнэгүй ntfy апп ашиглана.")}</div>
+      <button class="btn primary" id="nt-on">🔔 ${tr("Идэвхжүүлэх")}</button>`}
+  </div>`;
+}
+document.getElementById("ntfybox")?.addEventListener("click",async e=>{
+  const b=e.target.closest("button"); if(!b||!isOwner) return;
+  const setTopic=async on=>{ const topic=on?"magtaal-"+Array.from(crypto.getRandomValues(new Uint8Array(12)),x=>"abcdefghijkmnpqrstuvwxyz23456789"[x%32]).join(""):null;
+    try{ if(topic) await fdb.collection("meta").doc("notify").set({topic,on:true,updatedAt:Date.now()}); else await fdb.collection("meta").doc("notify").delete();
+      ntfyTopic=topic; ntfyLoaded=true; renderNtfy(); if(topic) toast(tr("Идэвхжлээ — ntfy апп дээр сэдвээ нэмнэ үү")) }catch(err){handleWriteErr(err)} };
+  if(b.id==="nt-on"||b.id==="nt-new"){ if(b.id==="nt-new") return confirmBox(tr("Шинэ сэдэв үүсгэх үү?"),tr("Хуучин сэдвээр мэдэгдэл ирэхээ болино. ntfy апп дээр шинэ сэдвийг дахин нэмэх хэрэгтэй."),()=>setTopic(true)); return setTopic(true) }
+  if(b.id==="nt-off") return confirmBox(tr("Мэдэгдлийг унтраах уу?"),"",()=>setTopic(false));
+  if(b.id==="nt-copy"){ try{await navigator.clipboard.writeText(ntfyTopic);toast(tr("Хуулсан"))}catch(err){document.getElementById("nt-topic").select()} return }
+  if(b.id==="nt-test"){ b.disabled=true; const ok=await ntfySend("Магтаалын баг","🔔 Туршилтын мэдэгдэл — тохиргоо ажиллаж байна!",ntfyTopic); b.disabled=false; toast(ok?tr("Илгээлээ — утсаа шалгаарай"):tr("Илгээж чадсангүй")) }
+});
 /* ---------------- Санал хүсэлт ---------------- */
 let fbUnsub=null, fbList=new Map();
 function renderFeedback(){
@@ -2180,7 +2238,8 @@ document.getElementById("fbbox").addEventListener("click",async e=>{
     if(mode!=="db"){toast(tr("Интернэтэд холбогдсон үед илгээнэ үү"));return}
     const btn=e.target.closest("#fb-send"); btn.disabled=true;
     try{ await fdb.collection("feedback").doc(newId()).set({text:text.slice(0,2000),name,by:myEmail(),createdAt:Date.now(),status:"new"});
-      document.getElementById("fb-text").value=""; toast(tr("Баярлалаа! Таны санал илгээгдлээ"))
+      document.getElementById("fb-text").value=""; toast(tr("Баярлалаа! Таны санал илгээгдлээ"));
+      if(!isOwner) ntfySend("💬 Шинэ санал хүсэлт"+(name?" — "+name:""),text.slice(0,600));
     }catch(err){toast(tr("Илгээж чадсангүй — дахин оролдоно уу"))}
     btn.disabled=false; return;
   }
@@ -2219,6 +2278,7 @@ async function sendLyricsRequest(ctx,ov){
   try{
     await fdb.collection("requests").doc(newId()).set({type:"lyrics",setId:ctx.setId,idx:ctx.idx,songId:ctx.songId,ov,prev:ctx.base,setName:st?.name||"",songTitle:so?.title||"",
       by:myEmail(),byName:me.displayName||me.email,createdAt:Date.now(),status:"pending"});
+    notifyOwner(`📝 «${so?.title||""}» дууны үг солих хүсэлт илгээлээ (${st?.name||""}) — зөвшөөрөх үү?`,true);
     toast(tr("Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө"));
   }catch(e){toast(tr("Илгээж чадсангүй — дахин оролдоно уу"))}
 }
@@ -2259,7 +2319,7 @@ async function sendDrafts(){
     for(const id of ids){
       const d=drafts[id], base=serverSets.get(id);
       await fdb.collection("requests").doc(newId()).set({setId:id,data:JSON.parse(JSON.stringify(d)),isNew:!base,baseUpdatedAt:base?.updatedAt||0,setName:d.name||"",by:me.email.toLowerCase(),byName:me.displayName||me.email,createdAt:Date.now(),status:"pending"});
-      delete drafts[id]; saveDrafts();
+      delete drafts[id]; saveDrafts(); notifyOwner(`📝 «${d.name||"Жагсаалт"}» жагсаалтын засварын хүсэлт илгээлээ — зөвшөөрөх үү?`,true);
     }
     overlayDrafts(); renderAll(); toast("Хүсэлт илгээлээ — эзэмшигч хянаад зөвшөөрнө");
   }catch(e){toast("Илгээж чадсангүй — дахин оролдоно уу")}

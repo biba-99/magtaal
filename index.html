@@ -1348,8 +1348,14 @@ function openChordPicker(li,pos){
 }
 /* Аккорд бичээд Enter (утасны «return / done») дарахад баталгаажна */
 function enterOk(inp,btnId){ if(!inp) return; inp.setAttribute("enterkeyhint","done"); let fired=false;
-  const go=e=>{ if((e.key==="Enter"||e.keyCode===13)&&!e.isComposing){ e.preventDefault(); if(fired) return; fired=true; setTimeout(()=>fired=false,300); document.getElementById(btnId)?.click() } };
-  inp.addEventListener("keydown",go); inp.addEventListener("keyup",go); }
+  const fire=()=>{ if(fired) return; fired=true; setTimeout(()=>fired=false,350); document.getElementById(btnId)?.click() };
+  const btn=document.getElementById(btnId); if(btn) btn.type="button";
+  // iPad/iPhone: return товч form-ийн submit-ийг найдвартай өдөөдөг
+  if(!inp.form){ const row=inp.parentElement, f=document.createElement("form"); f.className=row.className; f.style.cssText=row.style.cssText; f.setAttribute("action","#"); f.noValidate=true; row.replaceWith(f); while(row.firstChild) f.appendChild(row.firstChild); }
+  inp.form.addEventListener("submit",e=>{ e.preventDefault(); fire() });
+  const go=e=>{ if(e.key==="Enter"||e.keyCode===13||e.which===13){ e.preventDefault(); fire() } };
+  inp.addEventListener("keydown",go); inp.addEventListener("keyup",go);
+  inp.addEventListener("beforeinput",e=>{ if(e.inputType==="insertLineBreak"||e.inputType==="insertParagraph"){ e.preventDefault(); fire() } }); }
 function applyChord(li,pos,chord){
   const L=bodyLines(); const p=parseLine(L[li]);
   p.ch=p.ch.filter(o=>o.pos!==pos);

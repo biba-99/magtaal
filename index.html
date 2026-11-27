@@ -76,7 +76,7 @@ body.sel-on #songlist{padding-bottom:190px}
 .chips.hscroll::-webkit-scrollbar{display:none}
 .chips.hscroll .chip{flex:0 0 auto;white-space:nowrap;scroll-snap-align:start}
 .chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;font-size:13px}
-#tagchips .chip,#rolechips .chip{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+#tagchips .chip,#modalBox [data-r]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .tm-head{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;font-size:15px}.tm-head.on{border-color:var(--accent)}.tm-arr{color:var(--accent);font-size:14px}.tm-body{display:flex;flex-direction:column;gap:6px;margin:6px 0 4px 16px}
 .tm-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px}
@@ -920,13 +920,8 @@ function renderTeam(){
   const present=allGroups();
   if(teamFilter&&!present.includes(teamFilter)) teamFilter=null;
   const chips=`<div class="chips hscroll" style="margin:0 0 12px;padding:2px 0"><button class="chip ${!teamFilter?"on":""}" data-tf="">Бүгд</button>${present.map(r=>`<button class="chip ${teamFilter===r?"on":""}" data-tf="${esc(r)}" data-noi18n>${esc(r)}</button>`).join("")}</div>`;
-  const roleCnt=r=>ms.filter(([,m])=>memberHasRole(m,r)).length;
-  if(roleFilter&&!ROLES.includes(roleFilter)) roleFilter=null;
-  const roleChipsHtml=`<div class="cp-lbl" style="margin:0 0 6px">${tr("Үүрэг")}</div><div class="chips" id="rolechips" style="margin:0 0 ${canEditMembers()?4:12}px">${ROLES.map(r=>`<button class="chip ${roleFilter===r?"on":""}" data-role="${esc(r)}" data-noi18n>${esc(r)} <span style="opacity:.6">${roleCnt(r)}</span></button>`).join("")}${canEditMembers()?`<button class="chip" data-roleadd style="border-style:dashed">＋ ${tr("Үүрэг")}</button>`:""}</div>${canEditMembers()?`<div class="help" style="margin:0 0 12px">${tr("Үүрэг дээр удаан дарж нэрийг засах, устгах")}</div>`:""}`;
   let body;
-  if(roleFilter){
-    body=ms.filter(([,m])=>memberHasRole(m,roleFilter)).sort((a,b)=>(a[1].name||"").localeCompare(b[1].name||"","mn")).map(e=>item(e)).join("")||`<div class="empty" style="padding:16px">${tr("Энэ үүрэгтэй гишүүн алга")}</div>`;
-  } else if(teamGroup&&present.length){
+  if(teamGroup&&present.length){
     const byLead=r=>(a,b)=>isHeadOf(b[1],r)-isHeadOf(a[1],r)||(a[1].name||"").localeCompare(b[1].name||"","mn");
     body=present.map(r=>{const g=ms.filter(([,m])=>has(m,r)).sort(byLead(r));return `<h3 class="sub" style="margin:16px 0 8px;display:flex;align-items:center;gap:6px"><span data-noi18n>${esc(r)}</span> <span class="tag">${g.length}</span>${canEditMembers()?`<button class="btn ghost small" data-gedit="${esc(r)}" style="margin-left:auto;text-transform:none;letter-spacing:0">✎ Засах</button>`:""}</h3>`+g.map(e=>item(e,r)).join("")}).join("");
     const none=ms.filter(([,m])=>!(m.groups||[]).length); if(none.length) body+=`<h3 class="sub" style="margin:16px 0 8px">Багт ороогүй</h3>`+none.map(e=>item(e)).join("");
@@ -934,7 +929,7 @@ function renderTeam(){
     body=(canEditMembers()?`<div class="row" style="justify-content:flex-end;margin:-4px 0 6px"><button class="btn ghost small" data-gedit="${esc(teamFilter)}">✎ Засах</button></div>`:"")+ms.filter(([,m])=>has(m,teamFilter)).sort((a,b)=>isHeadOf(b[1],teamFilter)-isHeadOf(a[1],teamFilter)||(a[1].name||"").localeCompare(b[1].name||"","mn")).map(e=>item(e,teamFilter)).join("");
   } else body=ms.slice().sort((a,b)=>(a[1].name||"").localeCompare(b[1].name||"","mn")).map(e=>item(e)).join("");
   const sx=el.querySelector(".hscroll")?.scrollLeft||0;
-  el.innerHTML=chips+roleChipsHtml+`<div class="list" style="margin-top:0">${body}</div>`+edHtml;
+  el.innerHTML=chips+`<div class="list" style="margin-top:0">${body}</div>`+edHtml;
   const hs=el.querySelector(".hscroll"); if(hs){hs.scrollLeft=sx; const on=hs.querySelector(".chip.on"); if(on&&!sx&&on.offsetLeft+on.offsetWidth>hs.clientWidth) hs.scrollLeft=on.offsetLeft;}
 }
 
@@ -1861,31 +1856,6 @@ function renameRoleEverywhere(a,b){
   for(const [id,st] of state.sets){ if(!(st.team||[]).some(t=>roleFix(t.role||"")===a)) continue; save("sets",id,{...st,team:st.team.map(t=>roleFix(t.role||"")===a?{...t,role:b}:t)}) }
 }
 function memberHasRole(m,r){return (m.roles||[]).map(roleFix).includes(r)||Object.values(m.teamRoles||{}).some(a=>(a||[]).map(roleFix).includes(r))}
-let roleFilter=null;
-function openRoleMenu(r){
-  if(!canEditMembers()){toast(tr("Гишүүдийг зөвхөн эзэмшигч засна"));return}
-  const n=membersWithRole(r);
-  openModal(`<h2 data-noi18n>${esc(r)}</h2><div style="color:var(--muted);font-size:13px;margin:0 0 4px">${n} ${tr("гишүүн")}</div>
-    <label class="f">${tr("Үүргийн нэр")}</label><div class="qrow"><input class="in" id="rm-name" value="${esc(r)}" autocomplete="off" data-noi18n><button class="btn primary" id="rm-save">${tr("Хадгалах")}</button></div>
-    <div class="row" style="margin-top:16px"><button class="btn danger" id="rm-del">🗑 ${tr("Үүргийг устгах")}</button><span style="flex:1"></span><button class="btn" data-mclose>${tr("Хаах")}</button></div>`);
-  const inp=document.getElementById("rm-name");
-  const doSave=()=>{const v=inp.value.trim().replace(/\s+/g," "); if(!v){toast(tr("Үүргийн нэр бичнэ үү"));return}
-    if(v===r){closeModal();return}
-    if(ROLES.some(x=>x!==r&&x.toLowerCase()===v.toLowerCase())){toast(tr("Ийм нэртэй үүрэг аль хэдийн байна"));return}
-    closeModal(); if(roleFilter===r) roleFilter=v; saveRoles(ROLES.map(x=>x===r?v:x)); renameRoleEverywhere(r,v); toast(tr("Нэр солигдлоо"))};
-  document.getElementById("rm-save").onclick=doSave; inp.onkeydown=e=>{if(e.key==="Enter")doSave()};
-  document.getElementById("rm-del").onclick=()=>confirmBox("«"+r+"» "+tr("үүргийг устгах уу?"),n?n+" "+tr("гишүүнээс энэ үүрэг хасагдана. Гишүүд өөрсдөө устахгүй."):tr("Энэ үүрэгтэй гишүүн байхгүй."),()=>{
-    if(roleFilter===r) roleFilter=null; stripRoleFromMembers(r); saveRoles(ROLES.filter(x=>x!==r)); toast("«"+r+"» "+tr("үүрэг устгагдлаа"))});
-}
-function openRoleAdd(){
-  if(!canEditMembers()) return;
-  openModal(`<h2>${tr("Шинэ үүрэг")}</h2><label class="f">${tr("Үүргийн нэр")}</label><div class="qrow"><input class="in" id="ra-name" placeholder="${tr("ж: Дуу авиа, Проектор")}" autocomplete="off"><button class="btn primary" id="ra-ok">${tr("Нэмэх")}</button></div>
-    <div class="row" style="margin-top:16px"><span style="flex:1"></span><button class="btn" data-mclose>${tr("Хаах")}</button></div>`);
-  const inp=document.getElementById("ra-name"); setTimeout(()=>inp.focus(),50);
-  const go=()=>{const v=inp.value.trim().replace(/\s+/g," "); if(!v) return; if(ROLES.some(x=>x.toLowerCase()===v.toLowerCase())){toast(tr("Ийм нэртэй үүрэг аль хэдийн байна"));return}
-    closeModal(); saveRoles([...ROLES,v]); toast("«"+v+"» "+tr("үүрэг нэмэгдлээ"))};
-  document.getElementById("ra-ok").onclick=go; enterOk(inp,"ra-ok");
-}
 function membersWithRole(r){let n=0;for(const [,m] of state.members){if((m.roles||[]).map(roleFix).includes(r)||Object.values(m.teamRoles||{}).some(a=>(a||[]).map(roleFix).includes(r)))n++}return n}
 function pickMember(){
   const ms=[...state.members.entries()];
@@ -1925,12 +1895,21 @@ function openMember(id){
     <div class="row" style="margin-top:6px"><input class="in" id="mm-ng" placeholder="Шинэ багийн нэр (ж: BIM)" style="flex:1"><button class="btn" id="mm-ngb">Нэмэх</button></div>
     <div id="mm-teams"></div>
     <div id="mm-genwrap"><label class="f">Үүрэг</label><div class="chips" id="mm-roles" style="margin-top:0"></div></div>
-    <div class="row" style="margin-top:8px"><input class="in" id="mm-nr" placeholder="Шинэ үүрэг (ж: Дуу авиа, Проектор)" style="flex:1"><button class="btn" id="mm-nrb">＋ Үүрэг</button></div>
-    <div class="help" style="margin:4px 0 0">Үүргийн нэрийг засах, устгахдаа «Баг» хэсэгт үүрэг дээр удаан дарна.</div>
+    <div id="mm-rpanel"></div>
+    <div class="help" style="margin:6px 0 0">Үүрэг дээр удаан дарж нэрийг засах, устгах. «＋ Үүрэг»-ээр шинэ үүрэг нэмнэ.</div>
     <div class="grid2"><div><label class="f">Утас</label><input class="in" id="mm-p" inputmode="tel" value="${esc(m0.phone||"")}"></div>
     <div><label class="f">Дуулахад тохирох ая</label><input class="in" id="mm-k" placeholder="ж: G–A" value="${esc(m0.voiceKey||"")}"></div></div>
     <div class="row" style="margin-top:16px">${id?'<button class="btn danger" id="mm-del">Устгах</button>':""}<span style="flex:1"></span><button class="btn" data-mclose>Болих</button><button class="btn primary" id="mm-ok">Хадгалах</button></div>`);
-  const roleChips=(set,attr)=>ROLES.map(r=>`<button class="chip ${set.has(r)?"on":""}" ${attr} data-r="${esc(r)}">${esc(r)}</button>`).join("");
+  let rEdit=null, rDelArm=false; // rEdit: null | {mode:"add"} | {mode:"edit",r}
+  const roleChips=(set,attr)=>ROLES.map(r=>`<button class="chip ${set.has(r)?"on":""}" ${attr} data-r="${esc(r)}">${esc(r)}</button>`).join("")+`<button class="chip" data-radd ${attr} style="border-style:dashed">＋ Үүрэг</button>`;
+  const drawPanel=()=>{const P=document.getElementById("mm-rpanel"); if(!P) return;
+    if(!rEdit){P.innerHTML="";return}
+    const isE=rEdit.mode==="edit", n=isE?membersWithRole(rEdit.r):0;
+    P.innerHTML=`<div class="tm-card" style="margin-top:10px;padding:10px 12px"><b style="font-size:14px" data-noi18n>${isE?"✎ «"+esc(rEdit.r)+"»":tr("＋ Шинэ үүрэг")}</b>${isE?` <span style="color:var(--muted);font-size:13px">${n} ${tr("гишүүн")}</span>`:""}
+      <div class="qrow" style="margin-top:8px"><input class="in" id="mm-rname" value="${isE?esc(rEdit.r):""}" placeholder="${tr("ж: Дуу авиа, Проектор")}" autocomplete="off" data-noi18n><button class="btn primary" id="mm-rsave">${isE?tr("Хадгалах"):tr("Нэмэх")}</button></div>
+      <div class="row" style="margin-top:8px">${isE?`<button class="btn small danger" id="mm-rdel">${rDelArm?(n?`${tr("Дахин дарж устгана")} (${n} ${tr("гишүүнээс хасагдана")})`:tr("Дахин дарж устгана")):"🗑 "+tr("Үүргийг устгах")}</button>`:""}<span style="flex:1"></span><button class="btn small" id="mm-rcancel">${tr("Болих")}</button></div></div>`;
+    const inp=document.getElementById("mm-rname"); enterOk(inp,"mm-rsave"); if(!isE) setTimeout(()=>inp.focus(),30);
+  };
   const draw=()=>{
     document.getElementById("mm-groups").innerHTML=known.map(g=>`<button class="chip ${groupsSel.has(g)?"on":""}" data-g="${esc(g)}" data-noi18n>${esc(g)}</button>`).join("");
     const sel=known.filter(g=>groupsSel.has(g));
@@ -1940,16 +1919,30 @@ function openMember(id){
       <div class="chips" style="margin-top:0">${roleChips(teamRoles[g]||new Set(),`data-tr="${esc(g)}"`)}</div></div>`).join("");
     document.getElementById("mm-genwrap").style.display=sel.length?"none":"";
     document.getElementById("mm-roles").innerHTML=roleChips(general,"");
+    drawPanel();
   };
   draw();
   const box=document.getElementById("modalBox");
+  let lpFired=false;
   box.addEventListener("click",e=>{
     const b=e.target.closest("button"); if(!b) return;
+    if(lpFired&&b.dataset.r!==undefined){lpFired=false;return}
+    lpFired=false;
     if(b.dataset.g!==undefined){const g=b.dataset.g;if(groupsSel.has(g)){groupsSel.delete(g);leadSel.delete(g)}else{groupsSel.add(g);if(!teamRoles[g])teamRoles[g]=new Set(general)}draw();return}
     if(b.dataset.lg!==undefined){const g=b.dataset.lg;leadSel.has(g)?leadSel.delete(g):leadSel.add(g);draw();return}
-    if(b.id==="mm-nrb"){const i=document.getElementById("mm-nr"),v=i.value.trim().replace(/\s+/g," ");if(!v)return;
-      if(ROLES.some(x=>x.toLowerCase()===v.toLowerCase())){toast(tr("Ийм үүрэг байна"));return}
-      i.value=""; saveRoles([...ROLES,v]); (Object.keys(teamRoles).length&&[...groupsSel].length?[...groupsSel].forEach(g=>(teamRoles[g]=teamRoles[g]||new Set()).add(v)):general.add(v)); draw(); toast(tr("Үүрэг нэмлээ")); return}
+    if(b.dataset.radd!==undefined){rEdit={mode:"add",tr:b.dataset.tr};rDelArm=false;drawPanel();return}
+    if(b.id==="mm-rcancel"){rEdit=null;drawPanel();return}
+    if(b.id==="mm-rsave"){const v=document.getElementById("mm-rname").value.trim().replace(/\s+/g," "); if(!v){toast(tr("Үүргийн нэр бичнэ үү"));return}
+      if(rEdit.mode==="add"){ if(ROLES.some(x=>x.toLowerCase()===v.toLowerCase())){toast(tr("Ийм нэртэй үүрэг аль хэдийн байна"));return}
+        const tgt=rEdit.tr!==undefined?(teamRoles[rEdit.tr]=teamRoles[rEdit.tr]||new Set()):general; tgt.add(v);
+        rEdit=null; saveRoles([...ROLES,v]); draw(); toast("«"+v+"» "+tr("үүрэг нэмэгдлээ")); return }
+      const a=rEdit.r; if(v===a){rEdit=null;drawPanel();return}
+      if(ROLES.some(x=>x!==a&&x.toLowerCase()===v.toLowerCase())){toast(tr("Ийм нэртэй үүрэг аль хэдийн байна"));return}
+      const sw=x=>{if(x.has(a)){x.delete(a);x.add(v)}}; sw(general); Object.values(teamRoles).forEach(sw);
+      rEdit=null; saveRoles(ROLES.map(x=>x===a?v:x)); renameRoleEverywhere(a,v); draw(); toast(tr("Нэр солигдлоо")); return}
+    if(b.id==="mm-rdel"){ if(!rDelArm){rDelArm=true;drawPanel();return}
+      const r=rEdit.r; general.delete(r); Object.values(teamRoles).forEach(x=>x.delete(r)); rEdit=null; rDelArm=false;
+      saveRoles(ROLES.filter(x=>x!==r)); stripRoleFromMembers(r); draw(); toast("«"+r+"» "+tr("үүрэг устгагдлаа")); return}
     if(b.dataset.r!==undefined){
       const set=b.dataset.tr!==undefined?teamRoles[b.dataset.tr]:general; const r=b.dataset.r;
       set.has(r)?set.delete(r):set.add(r); b.classList.toggle("on",set.has(r)); return}
@@ -1958,7 +1951,12 @@ function openMember(id){
     if(!known.includes(v))known.push(v); groupsSel.add(v); if(!teamRoles[v])teamRoles[v]=new Set(general); i.value=""; draw()};
   document.getElementById("mm-ngb").onclick=addG;
   document.getElementById("mm-ng").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();addG()}};
-  enterOk(document.getElementById("mm-nr"),"mm-nrb");
+  { let tm=null,x0=0,y0=0; const cancel=()=>{clearTimeout(tm);tm=null};
+    box.addEventListener("pointerdown",e=>{const b=e.target.closest("[data-r]"); if(!b||(e.pointerType==="mouse"&&e.button!==0)) return; x0=e.clientX;y0=e.clientY;cancel();
+      tm=setTimeout(()=>{tm=null; lpFired=true; try{navigator.vibrate&&navigator.vibrate(30)}catch(_){} rEdit={mode:"edit",r:b.dataset.r}; rDelArm=false; drawPanel(); document.getElementById("mm-rpanel")?.scrollIntoView({block:"nearest",behavior:"smooth"})},550)});
+    box.addEventListener("pointermove",e=>{if(tm&&Math.hypot(e.clientX-x0,e.clientY-y0)>10)cancel()});
+    ["pointerup","pointercancel","pointerleave"].forEach(t=>box.addEventListener(t,cancel));
+    box.addEventListener("contextmenu",e=>{const b=e.target.closest("[data-r]"); if(b){e.preventDefault(); cancel(); if(!lpFired){rEdit={mode:"edit",r:b.dataset.r};rDelArm=false;drawPanel()} }}); }
   document.getElementById("mm-ok").onclick=()=>{
     const name=document.getElementById("mm-n").value.trim(); if(!name){toast("Нэрээ бичнэ үү");return}
     addG();
@@ -2140,18 +2138,6 @@ document.getElementById("qclr").onclick=()=>{const q=document.getElementById("q"
   C.addEventListener("contextmenu",e=>{const b=e.target.closest("[data-tag]"); if(b){e.preventDefault(); if(!fired){cancel(); openGroupMenu(b.dataset.tag)} }});
   C.addEventListener("click",e=>{ if(fired){fired=false;e.stopPropagation();e.preventDefault();return}
     const b=e.target.closest("[data-tag]");if(b){tagFilter=tagFilter===b.dataset.tag?null:b.dataset.tag;renderSongs()}});
-})();
-(()=>{const C=document.getElementById("teamlist"); let tm=null,x0=0,y0=0,fired=false; const cancel=()=>{clearTimeout(tm);tm=null};
-  C.addEventListener("pointerdown",e=>{const b=e.target.closest("[data-role]"); if(!b||(e.pointerType==="mouse"&&e.button!==0)) return; fired=false; x0=e.clientX; y0=e.clientY; cancel();
-    tm=setTimeout(()=>{tm=null; fired=true; try{navigator.vibrate&&navigator.vibrate(30)}catch(_){} openRoleMenu(b.dataset.role)},550)});
-  C.addEventListener("pointermove",e=>{if(tm&&Math.hypot(e.clientX-x0,e.clientY-y0)>10)cancel()});
-  ["pointerup","pointercancel","pointerleave"].forEach(t=>C.addEventListener(t,cancel));
-  C.addEventListener("contextmenu",e=>{const b=e.target.closest("[data-role]"); if(b){e.preventDefault(); if(!fired){cancel(); openRoleMenu(b.dataset.role)} }});
-  C.addEventListener("click",e=>{ const b=e.target.closest("[data-role]"), a=e.target.closest("[data-roleadd]");
-    if(b&&fired){fired=false;e.stopPropagation();e.preventDefault();return}
-    if(e.target.closest("[data-tf]")) roleFilter=null;
-    if(a){e.stopPropagation();openRoleAdd();return}
-    if(b){e.stopPropagation();roleFilter=roleFilter===b.dataset.role?null:b.dataset.role;renderTeam()}},true);
 })();
 document.getElementById("songlist").onclick=e=>{const b=e.target.closest("[data-song]");if(!b)return;
   if(selMode){const id=b.dataset.song; selSongs.has(id)?selSongs.delete(id):selSongs.add(id); b.classList.toggle("sel",selSongs.has(id)); b.querySelector(".ck").textContent=selSongs.has(id)?"✓":""; renderSelBar(); return}

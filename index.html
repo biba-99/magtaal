@@ -213,6 +213,8 @@ button.sl-link,button.ld-link{cursor:pointer;color:inherit;padding:0}
 .sl-act button.rm{color:#c0392b}
 .sl-act button:active{background:var(--accent-soft)}
 .sl-trans{display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:calc(100% - 34px);margin:-2px 0 0 34px;padding:6px 10px;border:1.5px dashed var(--line);border-radius:10px;background:none;color:var(--muted);font-size:13px;text-align:left}
+.sl-trans.more{margin-top:4px;padding:4px 10px;font-size:12px;opacity:.85}
+.sl-trans.has+.sl-trans.has{margin-top:4px}
 .sl-trans.has{border-style:solid;border-color:var(--accent-soft);background:var(--accent-soft);color:var(--accent)}
 .sl-trans .tc,.ld-trans .tc{font-family:"JetBrains Mono",monospace;font-weight:700;color:var(--chord)}
 .sl-trans .te{margin-left:auto}
@@ -1405,18 +1407,22 @@ function diaFor(key){
   const n=(i,q)=>(flat?FLAT:SHARP)[(majTonic+i)%12]+q;
   return minor?[n(9,"m"),n(0,""),n(2,"m"),n(4,"m"),n(5,""),n(7,""),n(4,""),n(11,"dim")]:[n(0,""),n(2,"m"),n(4,"m"),n(5,""),n(7,""),n(9,"m"),n(10,""),n(7,"7")];
 }
-function openTransPicker(i){
+/* Шилжилт: нэг завсарт хэдэн ч шилжилт байж болно. it.transList=[{c:[аккорд…],t:"өгүүлбэр"}]; хуучин it.trans/it.transText-ийг уншина */
+function transOf(it){ if(!it) return []; if(Array.isArray(it.transList)) return it.transList.filter(x=>x&&((x.c||[]).length||x.t)); if((it.trans||[]).length||it.transText) return [{c:[...(it.trans||[])],t:it.transText||""}]; return [] }
+function setTrans(it,list){ const L=(list||[]).map(x=>({c:[...(x.c||[])],t:String(x.t||"").trim()})).filter(x=>x.c.length||x.t); delete it.trans; delete it.transText; if(L.length) it.transList=L; else delete it.transList }
+function transStr(it){ return transOf(it).map(x=>[(x.c||[]).join(" "),x.t||""].filter(Boolean).join(" — ")).join(" | ") }
+function openTransPicker(i,j){
   const s=state.sets.get(curSet); if(!s||!canEditSet()) return;
   const items=s.items||[]; const it=items[i], nx=items[i+1]; if(!it||!nx) return;
   const kFrom=it.key||songOf(it)?.key||"", kTo=nx.key||songOf(nx)?.key||"";
-  let seq=[...(it.trans||[])], txt=it.transText||"", pos=i;
+  const list=transOf(it); const isNew=!(j>=0&&j<list.length); const cur=isNew?{c:[],t:""}:list[j];
+  let seq=[...(cur.c||[])], txt=cur.t||"", pos=i;
   const keepTxt=()=>{const el=document.getElementById("tr-txt"); if(el) txt=el.value; const ps=document.getElementById("tr-pos"); if(ps) pos=+ps.value};
-  const hasT=x=>x&&(((x.trans||[]).length)||x.transText);
   const draw=()=>{
     const grid=arr=>arr.map(c=>`<button data-tch="${esc(c)}">${esc(c)}</button>`).join("");
-    openModal(`<h2>Шилжилт</h2>
+    openModal(`<h2>Шилжилт${list.length>1||(isNew&&list.length)?` <span style="color:var(--muted);font-weight:400;font-size:.8em" data-noi18n>${isNew?list.length+1:j+1}/${isNew?list.length+1:list.length}</span>`:""}</h2>
       <div class="help" style="margin:0 0 10px"><span data-noi18n>${esc(songOf(it)?.title||"?")}${kFrom?` (${esc(kFrom)})`:""} → ${esc(songOf(nx)?.title||"?")}${kTo?` (${esc(kTo)})`:""}</span></div>
-      <div class="tr-seq">${seq.length?seq.map((c,j)=>`<button class="ve-chip" data-tdel="${j}">${esc(chLbl(c))} ✕</button>`).join(""):'<span style="color:var(--muted)">Доорх аккордуудаас дараалуулан сонгоно</span>'}</div>
+      <div class="tr-seq">${seq.length?seq.map((c,k)=>`<button class="ve-chip" data-tdel="${k}">${esc(chLbl(c))} ✕</button>`).join(""):'<span style="color:var(--muted)">Доорх аккордуудаас дараалуулан сонгоно</span>'}</div>
       ${kFrom?`<div class="cp-lbl"><span data-noi18n>${esc(kFrom)}</span> аяны аккордууд</div><div class="cp-grid">${grid(diaFor(kFrom))}</div>`:""}
       ${kTo&&kTo!==kFrom?`<div class="cp-lbl"><span data-noi18n>${esc(kTo)}</span> аяны аккордууд</div><div class="cp-grid">${grid(diaFor(kTo))}</div>`:""}
       ${!kFrom&&!kTo?`<div class="cp-grid">${grid(diaFor("C"))}</div>`:""}
@@ -1425,9 +1431,8 @@ function openTransPicker(i){
       <div class="cp-lbl" style="margin-top:14px">Өгүүлбэр / тайлбар</div>
       <textarea class="in" id="tr-txt" rows="2" style="min-height:64px;font-family:inherit" placeholder="Жишээ: Бөмбөр 4 хэмжээ дангаараа, дараа нь бүгд орно">${esc(txt)}</textarea>
       ${items.length>2?`<div class="cp-lbl" style="margin-top:14px">Байрлал (аль дуунуудын хооронд)</div>
-      <select class="in" id="tr-pos" data-noi18n>${items.slice(0,-1).map((x,k)=>`<option value="${k}" ${k===pos?"selected":""}>${k+1}. ${esc(songOf(x)?.title||"?")} → ${k+2}. ${esc(songOf(items[k+1])?.title||"?")}${k!==i&&hasT(x)?" ⇄":""}</option>`).join("")}</select>
-      <div class="help" style="margin:4px 0 0">⇄ — тэнд байгаа шилжилттэй байраа солино</div>`:""}
-      <div class="row" style="margin-top:14px">${((it.trans||[]).length||it.transText)?'<button class="btn small danger" id="tr-clear">Устгах</button>':""}<span style="flex:1"></span><button class="btn small" data-mclose>Болих</button><button class="btn primary" id="tr-ok">Хадгалах</button></div>`);
+      <select class="in" id="tr-pos" data-noi18n>${items.slice(0,-1).map((x,k)=>{const n=transOf(x).length-(k===i&&!isNew?1:0);return `<option value="${k}" ${k===pos?"selected":""}>${k+1}. ${esc(songOf(x)?.title||"?")} → ${k+2}. ${esc(songOf(items[k+1])?.title||"?")}${n>0?` (${n})`:""}</option>`}).join("")}</select>`:""}
+      <div class="row" style="margin-top:14px">${!isNew?'<button class="btn small danger" id="tr-clear">Устгах</button>':""}<span style="flex:1"></span><button class="btn small" data-mclose>Болих</button><button class="btn primary" id="tr-ok">Хадгалах</button></div>`);
     enterOk(document.getElementById("tr-in"),"tr-add");
   };
   draw();
@@ -1437,11 +1442,11 @@ function openTransPicker(i){
     if(b.dataset.tch!==undefined){seq.push(b.dataset.tch);draw();return}
     if(b.dataset.tdel!==undefined){seq.splice(+b.dataset.tdel,1);draw();return}
     if(b.id==="tr-add"){const v=document.getElementById("tr-in").value.trim().replace(/^\[|\]$/g,"");if(v){seq.push(v);draw()}return}
-    if(b.id==="tr-clear"){closeModal();updateSet(s=>{delete s.items[i].trans;delete s.items[i].transText});return}
-    if(b.id==="tr-ok"){const tx=txt.trim(), to=pos;closeModal();updateSet(s=>{
-      const put=(x,t)=>{if(t.trans&&t.trans.length)x.trans=t.trans;else delete x.trans;if(t.transText)x.transText=t.transText;else delete x.transText};
-      const A=s.items[i], B=s.items[to]; const mine={trans:seq,transText:tx};
-      if(B&&to!==i){const theirs={trans:B.trans,transText:B.transText};put(B,mine);put(A,theirs)} else put(A,mine);
+    if(b.id==="tr-clear"){closeModal();updateSet(s=>{const L=transOf(s.items[i]);L.splice(j,1);setTrans(s.items[i],L)});return}
+    if(b.id==="tr-ok"){const mine={c:seq,t:txt.trim()}, to=pos; if(!mine.c.length&&!mine.t){ if(isNew){closeModal();return} } closeModal();updateSet(s=>{
+      const A=s.items[i]; const LA=transOf(A);
+      if(to===i||!s.items[to]){ if(isNew) LA.push(mine); else LA[j]=mine; setTrans(A,LA) }
+      else { if(!isNew) LA.splice(j,1); setTrans(A,LA); const B=s.items[to]; const LB=transOf(B); LB.push(mine); setTrans(B,LB) }
     });return}
   };
 }
@@ -1738,7 +1743,7 @@ function renderSetDetail(fillInputs){
       <div class="sl-ctl"><select data-ikey="${i}" ${ro?"disabled":""}>${['<option value="">—</option>'].concat(KEYS.map(k=>`<option ${k===it.key?"selected":""}>${k}</option>`)).join("")}</select>
       ${ro?"":`<div class="mv"><button data-up="${i}" aria-label="Дээш">▲</button><button data-dn="${i}" aria-label="Доош">▼</button></div><span style="flex:1"></span><div class="sl-act">${(canEditSongs()||lyricsByRequest())?`<button data-sedit="${i}" title="Энэ жагсаалтад засах">✎</button>`:""}<button data-rm="${i}" class="rm" title="Хасах">✕</button></div>`}</div>
       <input class="in sl-note" data-note="${i}" value="${esc(it.note||"")}" placeholder="Тэмдэглэл (жишээ: 2 удаа дахилт)" ${ro?"disabled":""}>
-    </div>${i<items.length-1?(((it.trans||[]).length||it.transText)?`<button class="sl-trans has" data-trans="${i}" ${ro?"disabled":""}><span class="tl">↪ Шилжилт</span>${(it.trans||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join("")}${ro?"":'<span class="te">✎</span>'}${it.transText?`<span class="tt" data-noi18n>${esc(it.transText)}</span>`:""}</button>`:(ro?"":`<button class="sl-trans" data-trans="${i}">＋ Шилжилт (аккорд, өгүүлбэр)</button>`)):""}`}).join(""):'<div class="empty" style="padding:16px">Дуу нэмээгүй байна</div>';
+    </div>${i<items.length-1?(()=>{const TL=transOf(it);return TL.map((x,j)=>`<button class="sl-trans has" data-trans="${i}" data-tj="${j}" ${ro?"disabled":""}><span class="tl">↪ Шилжилт${TL.length>1?` ${j+1}`:""}</span>${(x.c||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join("")}${ro?"":'<span class="te">✎</span>'}${x.t?`<span class="tt" data-noi18n>${esc(x.t)}</span>`:""}</button>`).join("")+(ro?"":(TL.length?`<button class="sl-trans more" data-trans="${i}" data-tj="-1">＋ Дахин шилжилт нэмэх</button>`:`<button class="sl-trans" data-trans="${i}" data-tj="-1">＋ Шилжилт (аккорд, өгүүлбэр)</button>`))})():""}`}).join(""):'<div class="empty" style="padding:16px">Дуу нэмээгүй байна</div>';
   const team=(s.team||[]).map((t,i)=>({...t,_i:i})).sort((a,b)=>((b.role==="Ахлагч")-(a.role==="Ахлагч"))||(isHead(state.members.get(b.memberId))-isHead(state.members.get(a.memberId)))||a._i-b._i);
   /* Багаар бүлэглэнэ: зөвхөн багийн нэр харагдана, дарахад гишүүд гарна */
   const byTeam=new Map();
@@ -1766,7 +1771,7 @@ document.getElementById("sd-notes").oninput=e=>debouncedSetField("notes",e.targe
 document.getElementById("sd-songs").addEventListener("click",e=>{
   if(e.target.closest(".sl-link")) return;
   const so=e.target.closest("[data-sopen]"); if(so){openLead(curSet,+so.dataset.sopen);return}
-  const tb=e.target.closest("[data-trans]"); if(tb){openTransPicker(+tb.dataset.trans);return}
+  const tb=e.target.closest("[data-trans]"); if(tb){openTransPicker(+tb.dataset.trans,tb.dataset.tj==null?0:+tb.dataset.tj);return}
   const se=e.target.closest("[data-sedit]"); if(se){openSetItemEditor(curSet,+se.dataset.sedit);return}
   const ss=e.target.closest("[data-ssync]");
   if(ss){ if(!canEditSongs()){toast("Дуу засахыг зөвхөн эзэмшигч хийнэ");return}
@@ -1792,7 +1797,7 @@ document.getElementById("sd-del").onclick=()=>confirmBox("Жагсаалтыг �
 document.getElementById("sd-copy").onclick=async()=>{
   const s=state.sets.get(curSet); if(!s) return;
   const lines=[`${s.name} — ${fmtDate(s.date)}`,""];
-  (s.items||[]).forEach((it,i)=>{const so=songOf(it);lines.push(`${i+1}. ${so?.title||"?"}${it.key?` (${it.key})`:""}${it.note?` — ${it.note}`:""}`);if(((it.trans||[]).length||it.transText)&&i<s.items.length-1)lines.push(`   ↪ ${tr("Шилжилт")}: ${[(it.trans||[]).join(" "),it.transText||""].filter(Boolean).join(" — ")}`)});
+  (s.items||[]).forEach((it,i)=>{const so=songOf(it);lines.push(`${i+1}. ${so?.title||"?"}${it.key?` (${it.key})`:""}${it.note?` — ${it.note}`:""}`);if(i<s.items.length-1)transOf(it).forEach(x=>lines.push(`   ↪ ${tr("Шилжилт")}: ${[(x.c||[]).join(" "),x.t||""].filter(Boolean).join(" — ")}`))});
   if((s.team||[]).length){lines.push("",tr("Баг:"));s.team.forEach(t=>lines.push(`• ${state.members.get(t.memberId)?.name||"?"} — ${tr(roleFix(t.role||""))}`))}
   if(s.notes){lines.push("",s.notes)}
   const txt=lines.join("\n");
@@ -1927,7 +1932,7 @@ function renderLead(){
       <div class="ld-h"><span class="ld-n">${i+1}</span><span class="ld-t">${esc(song.title)}</span>${key?`<span class="keybadge">${esc(key)}</span>`:""}${song.bpm?`<span class="ld-bpm">♩ ${esc(song.bpm)} BPM</span>`:""}${linkBtnHtml(song,"ld-link")}</div>
       ${it.note?`<div class="note">📝 ${esc(it.note)}</div>`:""}
       <div class="song${lead.chords?"":" nochords"}" style="--fs:${lead.fs}px">${renderSong(song.body,steps,steps?flat:null)}</div>
-      ${lead.only==null&&i<items.length-1&&(((it.trans||[]).length&&lead.chords)||it.transText)?`<div class="ld-trans" style="font-size:${Math.round(lead.fs*.9)}px"><span class="tl">↪ Шилжилт</span>${lead.chords?(it.trans||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join(""):""}<span class="tl">→ ${esc(songOf(items[i+1])?.title||"")}</span>${it.transText?`<span class="tt" data-noi18n>${esc(it.transText)}</span>`:""}</div>`:""}
+      ${lead.only==null&&i<items.length-1?transOf(it).filter(x=>((x.c||[]).length&&lead.chords)||x.t).map(x=>`<div class="ld-trans" style="font-size:${Math.round(lead.fs*.9)}px"><span class="tl">↪ Шилжилт</span>${lead.chords?(x.c||[]).map(c=>`<span class="tc">${c==="_"?"&nbsp;&nbsp;":esc(c)}</span>`).join(""):""}<span class="tl">→ ${esc(songOf(items[i+1])?.title||"")}</span>${x.t?`<span class="tt" data-noi18n>${esc(x.t)}</span>`:""}</div>`).join(""):""}
     </section>`;
   }).join("")+'<div style="height:45vh"></div>';
   const all=document.getElementById("ld-all");
@@ -2341,7 +2346,7 @@ function diffHtml(cur,prop,isNew){
     const ch=[];
     if((m.key||"")!==(it.key||"")) ch.push(`${tr("ая")}: <span data-noi18n>${esc(m.key||"—")} → ${esc(it.key||"—")}</span>`);
     if((m.note||"")!==(it.note||"")) ch.push(`${tr("тэмдэглэл")}: <span data-noi18n>«${esc(it.note||"")}»</span>`);
-    if((m.trans||[]).join(" ")!==(it.trans||[]).join(" ")||(m.transText||"")!==(it.transText||"")) ch.push(`${tr("шилжилт")}: <span data-noi18n>${esc([(it.trans||[]).join(" "),it.transText||""].filter(Boolean).join(" — ")||"—")}</span>`);
+    if(transStr(m)!==transStr(it)) ch.push(`${tr("шилжилт")}: <span data-noi18n>${esc(transStr(it)||"—")}</span>`);
     if(JSON.stringify(m.ov||null)!==JSON.stringify(it.ov||null)) ch.push(tr("дууны хувилбар"));
     return `<li><b>${i+1}.</b> <span data-noi18n>${t}</span>${it.key?` <span data-noi18n>(${esc(it.key)})</span>`:""}${ch.length?` <span class="dfc">✎ ${ch.join(", ")}</span>`:""}</li>`;
   });

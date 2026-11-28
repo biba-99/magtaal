@@ -2225,7 +2225,7 @@ function renderDraftBar(){
 /* ---------------- Утасны мэдэгдэл (ntfy) ---------------- */
 let ntfyTopic=null, ntfyLoaded=false, ntfyQ=[], ntfyT=null;
 async function loadNtfy(force){
-  if(mode!=="db"||!me){ntfyTopic=null;return null}
+  if(mode!=="db"||!me){ntfyTopic=null;ntfyLoaded=true;return null}
   if(ntfyLoaded&&!force) return ntfyTopic;
   try{ const d=await fdb.collection("meta").doc("notify").get(); ntfyTopic=d.exists&&d.data().on!==false?(d.data().topic||null):null }catch(e){ntfyTopic=null}
   ntfyLoaded=true; return ntfyTopic;
@@ -2252,8 +2252,8 @@ function ntfyLine(col,id,data,del){
 }
 function renderNtfy(){
   const box=document.getElementById("ntfybox"); if(!box) return;
-  if(!isOwner||mode!=="db"){box.innerHTML="";return}
-  if(!ntfyLoaded){ loadNtfy().then(renderNtfy); box.innerHTML=""; return }
+  if(!isOwner||mode!=="db"||!me){box.innerHTML="";return}
+  if(!ntfyLoaded){ if(renderNtfy.busy) return; renderNtfy.busy=true; box.innerHTML=""; loadNtfy().then(()=>{renderNtfy.busy=false; if(ntfyLoaded) renderNtfy()}); return }
   const t=ntfyTopic;
   box.innerHTML=`<h3 class="sub">📲 ${tr("Утасны мэдэгдэл")}</h3><div class="tm-card" style="margin-top:0">
     ${t?`<div class="help" style="margin:0 0 8px">${tr("Засах эрхтэй хүмүүс засвар хийх, хүсэлт эсвэл санал илгээхэд таны утсанд мэдэгдэл ирнэ — апп хаалттай, утас түгжээтэй байсан ч.")}</div>

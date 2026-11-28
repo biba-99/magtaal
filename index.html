@@ -380,6 +380,7 @@ button,a,.item,.chip,.song,.tm-card,.sl-trans,.ld-item,[onclick],[role=button]{-
     </div>
     <div id="ed-vis" style="display:none">
       <div class="help" style="margin:0 0 10px">Аккорд тавих <b>үсэг дээрээ дарна</b> → аккордоо сонгоно. Байгаа аккорд дээр дарж солих, зөөх, устгах боломжтой. Мөрийн төгсгөлийн <b>＋</b> нь мөрийн ард аккорд нэмнэ. <b>＋↓</b> нь тухайн мөрийн доор шинэ хэсэг, аккордын мөр нэмнэ эсвэл байгаа хэсгийг (жишээ нь Chorus) үг, аккордтой нь давтан оруулна. Хэсгийн нэр дээр дарж хувилах, зөөх, устгах боломжтой.</div>
+      <div class="row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap"><button class="btn small danger" id="ve-clear" type="button">🧹 Бүх аккордыг арилгах</button><button class="btn small" id="ve-undo" type="button" style="display:none">↶ Буцаах</button></div>
       <div id="ve" class="ve"></div>
     </div>
     <div id="ed-textwrap">
@@ -982,7 +983,7 @@ function openSetItemEditor(setId,idx){
   document.getElementById("ed-key").value=d.key||"";
   document.getElementById("ed-bpm").value=d.bpm||"";
   setEdLinks(songLinks(d),d.linkNames);
-  edMode=null; edFull=(d.body||"").replace(/\r/g,"");
+  edMode=null; edFull=(d.body||"").replace(/\r/g,""); veClearPrev=null; const vu=document.getElementById("ve-undo"); if(vu) vu.style.display="none";
   document.getElementById("ed-body").value=plainOf(edFull);
   setEdMode(edFull.trim()?"vis":"text");
   setEditorCtx(true); setEdStatus("");
@@ -1003,7 +1004,7 @@ function openEditor(id){
   document.getElementById("ed-tags").value=(s.tags||[]).join(", ");
   setEdLinks(songLinks(s),s.linkNames);
   renderEdAudio();
-  edMode=null; edFull=(s.body||"").replace(/\r/g,"");
+  edMode=null; edFull=(s.body||"").replace(/\r/g,""); veClearPrev=null; const vu2=document.getElementById("ve-undo"); if(vu2) vu2.style.display="none";
   document.getElementById("ed-body").value=plainOf(edFull);
   document.getElementById("ed-del").style.display=id?"":"none";
   delete document.getElementById("ed-key").dataset.touched;
@@ -1390,6 +1391,25 @@ function setEdMode(m){
   document.getElementById("ed-textwrap").style.display=m==="vis"?"none":"";
   if(m==="vis") renderVE();
 }
+/* Бүх аккордыг арилгах: үг, хэсгийн нэр үлдэнэ; зөвхөн аккордтой (♪) мөрүүд устна. Буцаах боломжтой */
+function stripAllChords(full){
+  const out=[]; for(const l of String(full).replace(/\r/g,"").split("\n")){
+    if(isSpecialLine(l)){out.push(l);continue}
+    const p=parseLine(l); if(p.ch.length&&!p.text.trim()) continue;
+    out.push(p.ch.length?p.text.replace(/\s+$/,""):l);
+  }
+  return out.join("\n").replace(/\n{3,}/g,"\n\n");
+}
+let veClearArm=false, veClearPrev=null, veClearT=null;
+document.getElementById("ve-clear").onclick=()=>{
+  const b=document.getElementById("ve-clear");
+  if(!/\[[^\]]+\]/.test(edFull)){toast(tr("Арилгах аккорд алга"));return}
+  if(!veClearArm){veClearArm=true;b.textContent=tr("Дахин дарж батална — бүх аккорд арилна");clearTimeout(veClearT);veClearT=setTimeout(()=>{veClearArm=false;b.textContent="🧹 "+tr("Бүх аккордыг арилгах")},4000);return}
+  clearTimeout(veClearT); veClearArm=false; b.textContent="🧹 "+tr("Бүх аккордыг арилгах");
+  veClearPrev=edFull; edFull=stripAllChords(edFull); renderVE();
+  document.getElementById("ve-undo").style.display=""; toast(tr("Бүх аккордыг арилгалаа"));
+};
+document.getElementById("ve-undo").onclick=()=>{ if(veClearPrev==null) return; edFull=veClearPrev; veClearPrev=null; renderVE(); document.getElementById("ve-undo").style.display="none"; toast(tr("Буцаалаа")) };
 document.getElementById("ed-mode").onclick=e=>{const b=e.target.closest("[data-m]");if(b)setEdMode(b.dataset.m)};
 document.getElementById("ve").onclick=e=>{
   const bl=e.target.closest("[data-below]"); if(bl){openInsertMenu(+bl.dataset.below);return}
